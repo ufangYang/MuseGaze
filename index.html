@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>My Muse Interface</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: #0b0d12; color: #e8ecf3; overflow: hidden;
+  }
+  #ui {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 16px; background: rgba(12,14,20,0.7);
+    backdrop-filter: blur(8px); border-bottom: 1px solid #1e2330;
+  }
+  button {
+    font-size: 15px; font-weight: 600; padding: 9px 16px; border-radius: 10px;
+    border: 1px solid #2a3142; background: #1a2030; color: #e8ecf3; cursor: pointer;
+  }
+  button:hover { background: #232c40; }
+  button.primary { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+  button.primary:hover { background: #2f6fe0; }
+  #status { font-size: 13px; color: #9aa5b8; }
+  #bands {
+    position: fixed; left: 16px; bottom: 16px; z-index: 10;
+    display: flex; gap: 10px; align-items: flex-end; height: 180px;
+  }
+  .band { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 54px; }
+  .bar-wrap { width: 34px; height: 140px; background: #161b26; border-radius: 8px;
+    display: flex; align-items: flex-end; overflow: hidden; }
+  .bar { width: 100%; height: 0%; border-radius: 8px 8px 0 0; transition: height 0.12s linear; }
+  .band-label { font-size: 12px; color: #aeb8c9; }
+  .band-val { font-size: 11px; color: #6b7488; font-variant-numeric: tabular-nums; }
+  canvas { display: block; position: fixed; inset: 0; z-index: 1; }
+  #hint { position: fixed; right: 16px; bottom: 16px; z-index: 10; max-width: 300px;
+    font-size: 12px; color: #7a8498; text-align: right; line-height: 1.5; }
+</style>
+</head>
+<body>
+  <div id="ui">
+    <button id="connectBtn" class="primary">Connect Muse</button>
+    <button id="simBtn">Simulate (no headset)</button>
+    <span id="status">Not connected.</span>
+  </div>
+
+  <canvas id="art"></canvas>
+
+  <div id="bands">
+    <!-- filled by JS -->
+  </div>
+  <div id="hint">Put the band on, click Connect, pick your Muse in the Bluetooth dialog.<br>Close your eyes to watch Alpha rise.</div>
+
+<script type="module">
+// ============================================================================
+//  MY MUSE INTERFACE — a personal base you own. Reuses muse-js for the
+//  Bluetooth + EEG plumbing; everything else here is yours to change.
+//  Open in Chrome or Edge (Safari/Firefox can't do Web Bluetooth).
+// ============================================================================
+
+import { MuseClient } from 'https://cdn.jsdelivr.net/npm/muse-js@2.0.2/+esm';
+
+// ---- signal config ---------------------------------------------------------
+const FS = 256;                 // Muse sample rate (Hz)
+const N  = 256;                 // FFT window = 1 second of data
+// Band edges in Hz. EDIT HERE if you want different bands.
+const BANDS = {
+  Delta: [1, 4],
+  Theta: [4, 8],
+  Alpha: [8, 13],
+  Beta:  [13, 30],
+  Gamma: [30, 44],
+};
+// Colour per band (also used to tint the art). EDIT HERE.
+const BAND_COLORS = {
+  Delta: '#8b5cf6', Theta: '#3b82f6', Alpha: '#22c55e',
+  Beta:  '#f59e0b', Gamma: '#ef4444',
+};
+
+// ---- per-channel ring buffers (4 EEG electrodes) ---------------------------
+const CH = 4;                   // TP9, AF7, AF8, TP10
+const buffers = Array.from({ length: CH }, () => new Float32Array(N));
+let writePos = 0, filled = 0;
+
+// live smoothed band values (relative power 0..1), shared with the art
+const bandVals = {}; for (const k in BANDS) bandVals[k] = 0;
+const SMOOTH = 0.15;            // 0 = frozen, 1 = no smoothing. EDIT HERE.
+
+// ---- build the band bars UI ------------------------------------------------
+const bandsEl = document.getElementById('bands');
+const barEls = {};
+for (const name in BANDS) {
+  const wrap = document.createElement('div'); wrap.className = 'band';
+  wrap.innerHTML = `<div class="band-val" id="val-${name}">0</div>
+    <div class="bar-wrap"><div class="bar" id="bar-${name}"
+      style="background:${BAND_COLORS[name]}"></div></div>
+    <div class="band-label">${name}</div>`;
+  bandsEl.appendChild(wrap);
+  barEls[name] = document.getElementById(`bar-${name}`);
+}
+
+// ---- FFT (iterative radix-2 Cooley-Tukey) ----------------------------------
+function fft(re, im) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) { const tr = re[i]; re[i] = re[j]; re[j] = tr;
+                 const ti = im[i]; im[i] = im[j]; im[j] = ti; }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = -2 * Math.PI / len;
+    const wlRe = Math.cos(ang), wlIm = Math.sin(ang);
+    for (let i = 0; i < n; i += len) {
+      let wRe = 1, wIm = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const a = i + k, b = i + k + len / 2;
+        const vRe = re[b] * wRe - im[b] * wIm;
+        const vIm = re[b] * wIm + im[b] * wRe;
+        re[b] = re[a] - vRe; im[b] = im[a] - vIm;
+        re[a] += vRe;        im[a] += vIm;
+        const nwRe = wRe * wlRe - wIm * wlIm;
+        wIm = wRe * wlIm + wIm * wlRe; wRe = nwRe;
+      }
+    }
+  }
+}
+
+// ---- turn the latest window into 5 band powers -----------------------------
+const hann = new Float32Array(N);
+for (let i = 0; i < N; i++) hann[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1));
+
+function computeBands() {
+  if (filled < N) return null;                 // wait for a full second of data
+  const power = {}; for (const k in BANDS) power[k] = 0;
+  for (let c = 0; c < CH; c++) {
+    const re = new Float32Array(N), im = new Float32Array(N);
+    // read ring buffer in time order, remove mean, apply Hann window
+    let mean = 0; for (let i = 0; i < N; i++) mean += buffers[c][i]; mean /= N;
+    for (let i = 0; i < N; i++) {
+      const idx = (writePos + i) % N;
+      re[i] = (buffers[c][idx] - mean) * hann[i];
+    }
+    fft(re, im);
+    for (const name in BANDS) {
+      const [lo, hi] = BANDS[name];
+      for (let k = Math.round(lo); k < Math.round(hi); k++) {  // 1 Hz per bin
+        power[name] += re[k] * re[k] + im[k] * im[k];
+      }
+    }
+  }
+  let total = 0; for (const k in BANDS) total += power[k];
+  if (total <= 0) return null;
+  const rel = {}; for (const k in BANDS) rel[k] = power[k] / total;   // 0..1
+  return rel;
+}
+
+// ---- receive EEG packets from the Muse -------------------------------------
+function onReading(r) {
+  // r.electrode: 0=TP9 1=AF7 2=AF8 3=TP10 4=AUX ; r.samples: 12 microvolt values
+  if (r.electrode > 3) return;
+  for (let i = 0; i < r.samples.length; i++) {
+    buffers[r.electrode][(writePos + i) % N] = r.samples[i];
+  }
+  // advance the shared write head once per packet-set (use TP10 as the clock)
+  if (r.electrode === 3) {
+    writePos = (writePos + r.samples.length) % N;
+    filled = Math.min(N, filled + r.samples.length);
+  }
+}
+
+// ---- main loop: compute bands, update bars + art ---------------------------
+function tick() {
+  const rel = computeBands();
+  if (rel) {
+    for (const k in BANDS) {
+      bandVals[k] += (rel[k] - bandVals[k]) * SMOOTH;
+      barEls[k].style.height = Math.min(100, bandVals[k] * 260) + '%';
+      document.getElementById(`val-${k}`).textContent = Math.round(bandVals[k] * 100);
+    }
+  }
+  drawArt(bandVals);
+  requestAnimationFrame(tick);
+}
+
+// ============================================================================
+//  THE ART — this is YOUR canvas. Everything below is meant to be rewritten.
+//  bandVals.Alpha / .Beta / .Theta / .Delta / .Gamma are each 0..1, live.
+// ============================================================================
+const canvas = document.getElementById('art');
+const ctx = canvas.getContext('2d');
+function resize() { canvas.width = innerWidth; canvas.height = innerHeight; }
+addEventListener('resize', resize); resize();
+
+let phase = 0;
+function drawArt(b) {
+  const w = canvas.width, h = canvas.height;
+  ctx.fillStyle = 'rgba(11,13,18,0.18)';     // trail fade. EDIT HERE.
+  ctx.fillRect(0, 0, w, h);
+
+  const cx = w / 2, cy = h / 2;
+  phase += 0.01 + b.Beta * 0.08;              // focus (Beta) speeds it up
+  const rings = 5;
+  for (let i = 0; i < rings; i++) {
+    const t = i / rings;
+    const radius = 60 + t * 220 + b.Alpha * 260;   // calm (Alpha) makes it bloom
+    const hue = (t * 120 + b.Gamma * 200 + phase * 20) % 360;
+    ctx.beginPath();
+    for (let a = 0; a <= Math.PI * 2 + 0.1; a += 0.1) {
+      const wobble = Math.sin(a * 6 + phase * (2 + i)) * (8 + b.Theta * 60);
+      const rr = radius + wobble;
+      const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr;
+      a === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = `hsla(${hue}, 80%, 60%, ${0.5 - t * 0.3})`;
+    ctx.lineWidth = 2 + b.Delta * 6;
+    ctx.stroke();
+  }
+}
+
+// ---- connection wiring -----------------------------------------------------
+const statusEl = document.getElementById('status');
+const setStatus = (t) => statusEl.textContent = t;
+
+document.getElementById('connectBtn').addEventListener('click', async () => {
+  try {
+    setStatus('Opening Bluetooth dialog… pick your Muse.');
+    const client = new MuseClient();
+    await client.connect();          // <- triggers the pairing dialog
+    await client.start();
+    client.eegReadings.subscribe(onReading);
+    setStatus('Connected. Streaming live EEG.');
+  } catch (e) {
+    setStatus('Connection failed: ' + e.message + '  (Use Chrome/Edge, Bluetooth on.)');
+  }
+});
+
+// Simulation: fake, plausible EEG so you can build the art with no headset.
+document.getElementById('simBtn').addEventListener('click', () => {
+  setStatus('Simulating fake EEG (no headset).');
+  let phi = 0;
+  setInterval(() => {
+    phi += 0.05;
+    const samples = [];
+    for (let i = 0; i < 12; i++) {
+      const alpha = Math.sin(2 * Math.PI * 10 * (phi + i / FS)) * (20 + 15 * Math.sin(phi / 3));
+      const beta  = Math.sin(2 * Math.PI * 20 * (phi + i / FS)) * 8;
+      const noise = (Math.sin(phi * 7 + i) + Math.sin(phi * 13 + i * 2)) * 5;
+      samples.push(alpha + beta + noise);
+    }
+    for (let c = 0; c < CH; c++) onReading({ electrode: c, samples });
+  }, 1000 / (FS / 12));   // ~one packet-set per 12 samples
+});
+
+tick();   // start the render loop immediately (bars sit at 0 until data flows)
+</script>
+</body>
+</html>
