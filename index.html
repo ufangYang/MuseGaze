@@ -168,6 +168,8 @@ mon.innerHTML = `
   </div>
   <div style="margin-bottom:6px;color:#7a8498;">Raw EEG — proof it's you. Blink hard and watch it jump:</div>
   <canvas id="scope" width="296" height="90" style="width:296px;height:90px;background:#0b0d12;border-radius:8px;display:block;"></canvas>
+  <div style="margin:10px 0 4px;color:#7a8498;">Power spectrum 1–45 Hz — the five bands shaded:</div>
+  <canvas id="spec" width="296" height="90" style="width:296px;height:90px;background:#0b0d12;border-radius:8px;display:block;"></canvas>
   <div style="display:flex;gap:10px;align-items:center;margin-top:10px;">
     <label style="width:52px;">Plot</label>
     <select id="chSel" style="flex:1;background:#161b26;color:#e8ecf3;border:1px solid #2a3142;border-radius:6px;padding:3px;">
@@ -184,6 +186,8 @@ mon.innerHTML = `
 document.body.appendChild(mon);
 const scope = document.getElementById('scope');
 const sctx = scope.getContext('2d');
+const spec = document.getElementById('spec');
+const spctx = spec.getContext('2d');
 const liveDot = document.getElementById('liveDot');
 const liveText = document.getElementById('liveText');
 document.getElementById('chSel').addEventListener('change', e => PLOT_CH = +e.target.value);
@@ -196,6 +200,41 @@ promptBar.innerHTML = `<span style="color:#7a8498;">prompt from your brain →</
 document.body.appendChild(promptBar);
 const promptText = document.getElementById('promptText');
 let lastPrompt = 0;
+
+// --- Lab / Clean view toggle: one place for the art, one for the analysis ---
+const viewBtn = document.createElement('button');
+let labOn = true;
+viewBtn.textContent = 'Lab view: ON';
+viewBtn.onclick = () => {
+  labOn = !labOn;
+  viewBtn.textContent = 'Lab view: ' + (labOn ? 'ON' : 'OFF');
+  mon.style.display = labOn ? '' : 'none';
+  featPanel.style.display = labOn ? 'flex' : 'none';
+  bandsEl.style.display = labOn ? 'flex' : 'none';
+  promptBar.style.display = labOn ? '' : 'none';
+};
+document.getElementById('ui').appendChild(viewBtn);
+
+// --- live power spectrum (PSD): frequency on X, power on Y, bands shaded ----
+function drawSpectrum() {
+  const w = spec.width, h = spec.height, maxHz = 45;
+  spctx.clearRect(0, 0, w, h);
+  for (const name in BANDS) {                       // shade each band's frequency region
+    const [lo, hi] = BANDS[name];
+    const x0 = lo / maxHz * w, x1 = Math.min(hi, maxHz) / maxHz * w;
+    spctx.fillStyle = BAND_COLORS[name] + '22';
+    spctx.fillRect(x0, 0, x1 - x0, h);
+  }
+  let mx = 1e-9;
+  for (let k = 1; k <= maxHz; k++) if (spectrum[k] > mx) mx = spectrum[k];
+  for (let k = 1; k <= maxHz; k++) {                // one bar per 1-Hz bin, coloured by band
+    let col = '#4b5563';
+    for (const name in BANDS) { const [lo, hi] = BANDS[name]; if (k >= lo && k < hi) col = BAND_COLORS[name]; }
+    const x = k / maxHz * w, bh = Math.min(1, spectrum[k] / mx) * (h - 4);
+    spctx.fillStyle = col;
+    spctx.fillRect(x, h - bh, Math.max(1, w / maxHz - 1), bh);
+  }
+}
 
 function drawScope() {
   const w = scope.width, h = scope.height;
@@ -259,9 +298,12 @@ function fft(re, im) {
 const hann = new Float32Array(N);
 for (let i = 0; i < N; i++) hann[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1));
 
+const spectrum = new Float32Array(N / 2);      // avg power per 1-Hz bin, for the PSD plot
+
 function computeBands() {
   if (filled < N) return null;                 // wait for a full second of data
   const power = {}; for (const k in BANDS) power[k] = 0;
+  const acc = new Float32Array(N / 2);
   for (let c = 0; c < CH; c++) {
     const re = new Float32Array(N), im = new Float32Array(N);
     // read ring buffer in time order, remove mean, apply Hann window
@@ -271,12 +313,12 @@ function computeBands() {
       re[i] = (buffers[c][idx] - mean) * hann[i];
     }
     fft(re, im);
-    for (const name in BANDS) {
-      const [lo, hi] = BANDS[name];
-      for (let k = Math.round(lo); k < Math.round(hi); k++) {  // 1 Hz per bin
-        power[name] += re[k] * re[k] + im[k] * im[k];
-      }
-    }
+    for (let k = 0; k < N / 2; k++) acc[k] += re[k] * re[k] + im[k] * im[k];  // power spectrum
+  }
+  for (let k = 0; k < N / 2; k++) spectrum[k] = acc[k] / CH;   // averaged over channels, 1 Hz/bin
+  for (const name in BANDS) {
+    const [lo, hi] = BANDS[name];
+    for (let k = Math.round(lo); k < Math.round(hi); k++) power[name] += spectrum[k];
   }
   let total = 0; for (const k in BANDS) total += power[k];
   if (total <= 0) return null;
@@ -316,6 +358,7 @@ function tick() {
     }
   }
   drawScope();            // raw EEG waveform (verification)
+  drawSpectrum();         // live power spectrum with bands shaded
   updateLive();           // LIVE / no-data light
   updatePrompt();         // Phase 3: bands -> words, ~1x/second
   drawArt(featureVals);   // the art now runs on the preprocessed features

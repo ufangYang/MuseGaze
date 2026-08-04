@@ -26,6 +26,7 @@ Muse 2 EEG → bands → features → prompt → cheap AI image, shown on screen
 - [x] Phase 2 — Preprocess bands → steady 0–1 features (adaptive normalization + features panel)
 - [x] Phase 3 — Map features → live text prompt (buildPrompt: top-2 bands → mood/texture/color). Bottom prompt bar.
 - [x] Verification added — raw EEG scope (auto-scaled, per-channel selectable), LIVE/no-data light (lastPacket), smoothing slider. Left "monitor" panel = the goofi-like plot+params chooser.
+- [x] Lab view added — goofi-style analysis panel: raw EEG scope + live power spectrum (PSD, 1–45 Hz, bands shaded) + band/feature values + controls. "Lab view" toggle in top bar flips between clean art and full lab (two modes). For the ERP-researcher user who wants to see/control the frequency pipeline.
 - [ ] Phase 4 — Prompt → cheap AI image on screen  ← current
 - [ ] Phase 2 — Preprocess bands → steady 0–1 features
 - [ ] Phase 3 — Features → text prompt
