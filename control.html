@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MuseRave — Control</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: #070910; color: #e8ecf3; overflow: hidden;
+  }
+  /* dotted-grid patch canvas */
+  #grid {
+    position: fixed; inset: 0; z-index: 0;
+    background-image: radial-gradient(#141b2b 1px, transparent 1px);
+    background-size: 26px 26px;
+  }
+  #ui {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 20;
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; background: rgba(8,10,16,0.6);
+    backdrop-filter: blur(10px); border-bottom: 1px solid #141824;
+  }
+  button {
+    font-size: 14px; font-weight: 600; padding: 7px 13px; border-radius: 9px;
+    border: 1px solid #2a3142; background: #141a28; color: #e8ecf3; cursor: pointer;
+  }
+  button:hover { background: #1e2740; }
+  button.primary { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+  #status { font-size: 13px; color: #8b95a8; }
+  .spacer { flex: 1; }
+  a.back { font-size: 13px; color: #8b95a8; text-decoration: none; border: 1px solid #222a3a; padding: 7px 12px; border-radius: 9px; }
+  a.back:hover { color: #e8ecf3; background: #141a28; }
+
+  #wires { position: fixed; inset: 0; z-index: 1; pointer-events: none; }
+  #wires path { pointer-events: stroke; cursor: pointer; }
+
+  .node {
+    position: absolute; z-index: 2; width: 220px;
+    background: rgba(15,19,29,0.94); border: 1px solid #26304a; border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.45); user-select: none;
+  }
+  .node .hd {
+    padding: 8px 12px; font-size: 13px; font-weight: 700; letter-spacing: 0.3px;
+    border-bottom: 1px solid #1c2436; border-radius: 12px 12px 0 0; cursor: grab;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .node .hd .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .node .body { padding: 10px 12px; font-size: 12px; color: #aeb8c9; }
+  .node select, .node input[type=range] { width: 100%; }
+  .node select { background:#161b26; color:#e8ecf3; border:1px solid #2a3142; border-radius:6px; padding:4px; }
+  .node canvas { width: 196px; height: 74px; background:#0a0d14; border-radius:8px; display:block; }
+  .row { display:flex; align-items:center; gap:8px; margin-top:8px; }
+  .row label { width: 64px; color:#7f8aa0; }
+
+  /* ports */
+  .port { position: absolute; width: 13px; height: 13px; border-radius: 50%;
+    background: #0a0d14; border: 2px solid #3b82f6; z-index: 3; cursor: crosshair; }
+  .port.out { right: -7px; }
+  .port.in  { left: -7px; }
+  .port:hover { background: #3b82f6; }
+
+  .barwrap { display:flex; gap:6px; align-items:flex-end; height:64px; }
+  .b { flex:1; background:#161b26; border-radius:4px 4px 0 0; height:2%; }
+  .hint { position: fixed; bottom: 10px; left: 16px; z-index: 20; font-size: 12px; color: #56607a; }
+</style>
+</head>
+<body>
+  <div id="grid"></div>
+  <div id="ui">
+    <button id="connectBtn" class="primary">Connect Muse</button>
+    <button id="simBtn">Simulate</button>
+    <span id="status">Not connected.</span>
+    <div class="spacer"></div>
+    <span style="font-size:12px;color:#7f8aa0;">drag headers to move · drag port→port to wire · click a wire to cut</span>
+    <a class="back" href="./index.html">◂ Visualise</a>
+  </div>
+  <svg id="wires"></svg>
+  <div class="hint">Settings here drive the Visualise page live (saved to your browser).</div>
+
+<script type="module">
+// ============================================================================
+//  MuseRave — CONTROL page. A small node/patch canvas (goofi-style): drag
+//  nodes, wire ports, tune parameters. The pipeline actually runs on the wires
+//  you draw — cut Muse→Channel and everything downstream goes idle. Channel +
+//  smoothing choices are saved to localStorage and read by the Visualise page.
+// ============================================================================
+import { MuseClient } from 'https://esm.sh/muse-js';
+
+const FS = 256, N = 256, CH = 4;
+const BANDS = { Delta:[1,4], Theta:[4,8], Alpha:[8,13], Beta:[13,30], Gamma:[30,44] };
+const BAND_COLORS = { Delta:'#8b5cf6', Theta:'#3b82f6', Alpha:'#22c55e', Beta:'#f59e0b', Gamma:'#ef4444' };
+
+// ---- shared ring buffers + DSP (same math as the Visualise page) -----------
+const buffers = Array.from({ length: CH }, () => new Float32Array(N));
+let writePos = 0, filled = 0, lastPacket = 0;
+function onReading(r) {
+  if (r.electrode > 3) return;
+  lastPacket = performance.now();
+  for (let i = 0; i < r.samples.length; i++) buffers[r.electrode][(writePos+i)%N] = r.samples[i];
+  if (r.electrode === 3) { writePos = (writePos + r.samples.length) % N; filled = Math.min(N, filled + r.samples.length); }
+}
+function fft(re, im) {
+  const n = re.length;
+  for (let i=1,j=0;i<n;i++){ let bit=n>>1; for(;j&bit;bit>>=1)j^=bit; j^=bit;
+    if(i<j){const tr=re[i];re[i]=re[j];re[j]=tr;const ti=im[i];im[i]=im[j];im[j]=ti;} }
+  for (let len=2;len<=n;len<<=1){ const ang=-2*Math.PI/len,wlRe=Math.cos(ang),wlIm=Math.sin(ang);
+    for(let i=0;i<n;i+=len){ let wRe=1,wIm=0;
+      for(let k=0;k<len/2;k++){ const a=i+k,b=i+k+len/2;
+        const vRe=re[b]*wRe-im[b]*wIm,vIm=re[b]*wIm+im[b]*wRe;
+        re[b]=re[a]-vRe;im[b]=im[a]-vIm;re[a]+=vRe;im[a]+=vIm;
+        const nw=wRe*wlRe-wIm*wlIm;wIm=wRe*wlIm+wIm*wlRe;wRe=nw; } } }
+}
+const hann = new Float32Array(N);
+for (let i=0;i<N;i++) hann[i]=0.5-0.5*Math.cos(2*Math.PI*i/(N-1));
+const spectrum = new Float32Array(N/2);
+function computePSD(chans) {
+  if (filled < N) return null;
+  const acc = new Float32Array(N/2);
+  for (const c of chans) {
+    const re = new Float32Array(N), im = new Float32Array(N);
+    let mean=0; for (let i=0;i<N;i++) mean+=buffers[c][i]; mean/=N;
+    for (let i=0;i<N;i++) re[i]=(buffers[c][(writePos+i)%N]-mean)*hann[i];
+    fft(re, im);
+    for (let k=0;k<N/2;k++) acc[k]+=re[k]*re[k]+im[k]*im[k];
+  }
+  for (let k=0;k<N/2;k++) spectrum[k]=acc[k]/chans.length;
+  const power={}; for (const name in BANDS){ const [lo,hi]=BANDS[name]; power[name]=0;
+    for (let k=Math.round(lo);k<Math.round(hi);k++) power[name]+=spectrum[k]; }
+  let total=0; for (const k in BANDS) total+=power[k];
+  if (total<=0) return null;
+  const rel={}; for (const k in BANDS) rel[k]=power[k]/total;
+  return { spectrum, rel };
+}
+
+// ---- config written for the Visualise page ---------------------------------
+const cfg = { avgChannels: true, plotCh: 1, smooth: 0.15 };
+try { Object.assign(cfg, JSON.parse(localStorage.getItem('muserave.cfg')||'{}')); } catch {}
+function saveCfg() { localStorage.setItem('muserave.cfg', JSON.stringify(cfg)); }
+saveCfg();
+
+// ============================================================================
+//  NODE / PATCH ENGINE
+//  Each node has typed input/output ports. Wires connect an output to an input.
+//  Every frame we PULL from the output nodes back to the source, so only nodes
+//  actually wired to Muse produce data.
+// ============================================================================
+const nodes = {};      // id -> node
+const conns = [];      // {from:{node,port}, to:{node,port}}
+const layer = document.body;
+const wiresSvg = document.getElementById('wires');
+
+function makeNode(id, title, color, x, y, inPorts, outPorts, bodyHtml) {
+  const el = document.createElement('div');
+  el.className = 'node'; el.style.left = x+'px'; el.style.top = y+'px';
+  el.innerHTML = `<div class="hd"><span class="dot" style="background:${color}"></span>${title}</div>
+                  <div class="body">${bodyHtml}</div>`;
+  layer.appendChild(el);
+  const node = { id, el, x, y, inPorts, outPorts, ports:{}, out:{} };
+  // create port dots
+  inPorts.forEach((p,i)=>{ const d=mkPort('in', id, p, i, inPorts.length); el.appendChild(d); node.ports['in:'+p]=d; });
+  outPorts.forEach((p,i)=>{ const d=mkPort('out', id, p, i, outPorts.length); el.appendChild(d); node.ports['out:'+p]=d; });
+  nodes[id] = node;
+  makeDraggable(node);
+  return node;
+}
+function mkPort(kind, nodeId, port, i, total) {
+  const d = document.createElement('div');
+  d.className = 'port ' + kind;
+  d.style.top = (46 + i*22) + 'px';
+  d.dataset.node = nodeId; d.dataset.port = port; d.dataset.kind = kind;
+  d.addEventListener('mousedown', onPortDown);
+  d.addEventListener('mouseup', onPortUp);
+  return d;
+}
+
+// dragging nodes
+function makeDraggable(node) {
+  const hd = node.el.querySelector('.hd');
+  hd.addEventListener('mousedown', e => {
+    e.preventDefault();
+    const sx = e.clientX, sy = e.clientY, ox = node.x, oy = node.y;
+    hd.style.cursor = 'grabbing';
+    function mv(ev){ node.x = ox + (ev.clientX-sx); node.y = oy + (ev.clientY-sy);
+      node.el.style.left = node.x+'px'; node.el.style.top = node.y+'px'; drawWires(); }
+    function up(){ hd.style.cursor='grab'; removeEventListener('mousemove',mv); removeEventListener('mouseup',up); }
+    addEventListener('mousemove', mv); addEventListener('mouseup', up);
+  });
+}
+
+// wiring by drag: output port -> input port
+let dragWire = null;
+function portCenter(nodeId, kind, port) {
+  const d = nodes[nodeId].ports[kind+':'+port];
+  const r = d.getBoundingClientRect();
+  return { x: r.left + r.width/2, y: r.top + r.height/2 };
+}
+function onPortDown(e) {
+  e.preventDefault(); e.stopPropagation();
+  if (e.target.dataset.kind !== 'out') return;       // wires start at an output
+  dragWire = { from: { node: e.target.dataset.node, port: e.target.dataset.port }, x: e.clientX, y: e.clientY };
+  addEventListener('mousemove', onWireMove);
+  addEventListener('mouseup', onWireCancel, { once: true });
+}
+function onWireMove(e){ if (dragWire){ dragWire.x = e.clientX; dragWire.y = e.clientY; drawWires(); } }
+function onWireCancel(){ dragWire = null; removeEventListener('mousemove', onWireMove); drawWires(); }
+function onPortUp(e) {
+  if (!dragWire) return;
+  if (e.target.dataset.kind === 'in') {
+    const to = { node: e.target.dataset.node, port: e.target.dataset.port };
+    // one wire per input: drop any existing into that input
+    for (let i = conns.length-1; i>=0; i--) if (conns[i].to.node===to.node && conns[i].to.port===to.port) conns.splice(i,1);
+    conns.push({ from: dragWire.from, to });
+  }
+  dragWire = null; removeEventListener('mousemove', onWireMove); drawWires();
+}
+
+function drawWires() {
+  let html = '';
+  for (let i=0;i<conns.length;i++){
+    const a = portCenter(conns[i].from.node,'out',conns[i].from.port);
+    const b = portCenter(conns[i].to.node,'in',conns[i].to.port);
+    const mx = (a.x+b.x)/2;
+    html += `<path d="M${a.x},${a.y} C${mx},${a.y} ${mx},${b.y} ${b.x},${b.y}" fill="none" stroke="#3b82f6" stroke-width="2.5" opacity="0.8" data-i="${i}"/>`;
+  }
+  if (dragWire){ const a = portCenter(dragWire.from.node,'out',dragWire.from.port);
+    const mx=(a.x+dragWire.x)/2;
+    html += `<path d="M${a.x},${a.y} C${mx},${a.y} ${mx},${dragWire.y} ${dragWire.x},${dragWire.y}" fill="none" stroke="#60a5fa" stroke-width="2" opacity="0.6" stroke-dasharray="5 4"/>`; }
+  wiresSvg.innerHTML = html;
+  wiresSvg.querySelectorAll('path[data-i]').forEach(p =>
+    p.addEventListener('click', () => { conns.splice(+p.dataset.i,1); drawWires(); }));
+}
+function inputOf(nodeId, port) {                     // upstream node feeding this input, or null
+  const c = conns.find(c => c.to.node===nodeId && c.to.port===port);
+  return c ? c.from.node : null;
+}
+
+// ---- build the nodes -------------------------------------------------------
+makeNode('muse','Muse (source)','#22c55e', 60, 90, [], ['signal'],
+  `<div id="muState" style="color:#7f8aa0;">idle — Connect or Simulate</div>`);
+
+makeNode('chan','Channel','#3b82f6', 340, 90, ['signal'], ['signal'],
+  `<div class="row" style="margin-top:2px;"><label>Source</label>
+     <select id="chSel">
+       <option value="avg">Average (all 4)</option>
+       <option value="0">TP9 · left ear</option>
+       <option value="1">AF7 · left brow</option>
+       <option value="2">AF8 · right brow</option>
+       <option value="3">TP10 · right ear</option>
+     </select></div>
+   <div style="margin-top:6px;color:#7f8aa0;font-size:11px;">which electrode(s) feed the analysis</div>`);
+
+makeNode('scope','Raw scope','#64748b', 620, 60, ['signal'], [],
+  `<canvas id="scopeC" width="196" height="74"></canvas>
+   <div style="margin-top:6px;color:#7f8aa0;font-size:11px;">blink → big deflection</div>`);
+
+makeNode('psd','PSD (power spectrum)','#a855f7', 620, 250, ['signal'], ['bands'],
+  `<canvas id="psdC" width="196" height="74"></canvas>
+   <div style="margin-top:6px;color:#7f8aa0;font-size:11px;">1–45 Hz, bands shaded</div>`);
+
+makeNode('bands','Bands + smoothing','#f59e0b', 900, 250, ['bands'], ['features'],
+  `<div class="barwrap" id="barwrap"></div>
+   <div class="row"><label>Smooth</label><input id="smoothSl" type="range" min="0.02" max="0.5" step="0.01" value="${cfg.smooth}"></div>`);
+
+makeNode('out','▶ Visualise page','#ef4444', 900, 60, ['features'], [],
+  `<div id="outDom" style="font-size:13px;">—</div>
+   <div style="margin-top:6px;color:#7f8aa0;font-size:11px;">these settings drive the Visualise page</div>`);
+
+// default wiring: Muse → Channel → Scope & PSD → Bands → Out
+conns.push({from:{node:'muse',port:'signal'}, to:{node:'chan',port:'signal'}});
+conns.push({from:{node:'chan',port:'signal'}, to:{node:'scope',port:'signal'}});
+conns.push({from:{node:'chan',port:'signal'}, to:{node:'psd',port:'signal'}});
+conns.push({from:{node:'psd',port:'bands'},   to:{node:'bands',port:'bands'}});
+conns.push({from:{node:'bands',port:'features'}, to:{node:'out',port:'features'}});
+drawWires();
+
+// ---- node bodies: build band bars, wire controls ---------------------------
+const barwrap = document.getElementById('barwrap');
+const barEls = {};
+for (const k in BANDS){ const b=document.createElement('div'); b.className='b'; b.style.background=BAND_COLORS[k];
+  b.title=k; barwrap.appendChild(b); barEls[k]=b; }
+const chSel = document.getElementById('chSel');
+chSel.value = cfg.avgChannels ? 'avg' : String(cfg.plotCh);
+chSel.addEventListener('change', () => {
+  if (chSel.value === 'avg') { cfg.avgChannels = true; }
+  else { cfg.avgChannels = false; cfg.plotCh = +chSel.value; }
+  saveCfg();
+});
+document.getElementById('smoothSl').addEventListener('input', e => { cfg.smooth = +e.target.value; saveCfg(); });
+
+const scopeC = document.getElementById('scopeC'), sctx = scopeC.getContext('2d');
+const psdC = document.getElementById('psdC'), pctx = psdC.getContext('2d');
+const muState = document.getElementById('muState');
+const outDom = document.getElementById('outDom');
+
+// ---- per-frame PULL evaluation ---------------------------------------------
+const bandVals = {}; for (const k in BANDS) bandVals[k]=0;
+const featureVals = {}; for (const k in BANDS) featureVals[k]=0;
+const fMin={}, fMax={}; for (const k in BANDS){ fMin[k]=1; fMax[k]=0; }
+function toFeatures(bands){ const out={};
+  for (const k in bands){ const v=bands[k];
+    if (v<fMin[k]) fMin[k]=v; else fMin[k]+=(v-fMin[k])*0.0015;
+    if (v>fMax[k]) fMax[k]=v; else fMax[k]+=(v-fMax[k])*0.0015;
+    const range=Math.max(1e-6,fMax[k]-fMin[k]); out[k]=Math.min(1,Math.max(0,(v-fMin[k])/range)); }
+  return out; }
+
+function chansForChannelNode() { return cfg.avgChannels ? [0,1,2,3] : [cfg.plotCh]; }
+
+function drawScope(chans) {
+  const w=scopeC.width, h=scopeC.height; sctx.clearRect(0,0,w,h);
+  const c = chans[0];
+  let mx=1; for (let i=0;i<N;i++){ const a=Math.abs(buffers[c][i]); if(a>mx)mx=a; }
+  sctx.strokeStyle='#60a5fa'; sctx.lineWidth=1; sctx.beginPath();
+  for (let i=0;i<N;i++){ const v=buffers[c][(writePos+i)%N]; const x=i/(N-1)*w; const y=h/2-(v/mx)*(h/2*0.9);
+    i===0?sctx.moveTo(x,y):sctx.lineTo(x,y); }
+  sctx.stroke();
+}
+function drawPSD() {
+  const w=psdC.width, h=psdC.height, maxHz=45; pctx.clearRect(0,0,w,h);
+  for (const name in BANDS){ const [lo,hi]=BANDS[name]; const x0=lo/maxHz*w, x1=Math.min(hi,maxHz)/maxHz*w;
+    pctx.fillStyle=BAND_COLORS[name]+'22'; pctx.fillRect(x0,0,x1-x0,h); }
+  let mx=1e-9; for (let k=1;k<=maxHz;k++) if(spectrum[k]>mx)mx=spectrum[k];
+  for (let k=1;k<=maxHz;k++){ let col='#4b5563';
+    for (const name in BANDS){ const [lo,hi]=BANDS[name]; if(k>=lo&&k<hi)col=BAND_COLORS[name]; }
+    const x=k/maxHz*w, bh=Math.min(1,spectrum[k]/mx)*(h-3); pctx.fillStyle=col; pctx.fillRect(x,h-bh,Math.max(1,w/maxHz-1),bh); }
+}
+
+function frame() {
+  const live = lastPacket>0 && performance.now()-lastPacket<600;
+  muState.textContent = live ? 'streaming ✓' : (lastPacket ? 'signal lost' : 'idle — Connect or Simulate');
+  muState.style.color = live ? '#22c55e' : '#7f8aa0';
+
+  // PULL: is Channel fed by Muse?
+  const chanFed = inputOf('chan','signal') === 'muse';
+  const chans = chansForChannelNode();
+
+  // Scope: needs Channel on its input
+  if (inputOf('scope','signal') === 'chan' && chanFed && filled>=N) drawScope(chans);
+  else { sctx.clearRect(0,0,scopeC.width,scopeC.height); }
+
+  // PSD: needs Channel on its input
+  let psd = null;
+  if (inputOf('psd','signal') === 'chan' && chanFed) psd = computePSD(chans);
+  if (psd) drawPSD(); else { pctx.clearRect(0,0,psdC.width,psdC.height); }
+
+  // Bands: needs PSD on its input
+  const bandsFed = inputOf('bands','bands') === 'psd' && psd;
+  if (bandsFed) {
+    for (const k in BANDS){ bandVals[k]+=(psd.rel[k]-bandVals[k])*cfg.smooth;
+      barEls[k].style.height = Math.min(100, bandVals[k]*260)+'%'; }
+    const f = toFeatures(bandVals); for (const k in BANDS) featureVals[k]=f[k];
+  } else { for (const k in BANDS){ bandVals[k]*=0.9; barEls[k].style.height=Math.min(100,bandVals[k]*260)+'%'; } }
+
+  // Out: needs Bands on its input
+  if (inputOf('out','features') === 'bands' && bandsFed) {
+    const d = Object.entries(featureVals).sort((a,b)=>b[1]-a[1]);
+    outDom.innerHTML = `dominant: <b style="color:${BAND_COLORS[d[0][0]]}">${d[0][0]}</b> ${(d[0][1]*100)|0}` +
+      ` · <span style="color:${BAND_COLORS[d[1][0]]}">${d[1][0]}</span> ${(d[1][1]*100)|0}`;
+  } else outDom.textContent = '—';
+
+  requestAnimationFrame(frame);
+}
+
+// ---- connection wiring -----------------------------------------------------
+const statusEl = document.getElementById('status'); const setStatus=t=>statusEl.textContent=t;
+document.getElementById('connectBtn').addEventListener('click', async () => {
+  try { setStatus('Opening Bluetooth… pick your Muse.');
+    const client = new MuseClient(); await client.connect(); await client.start();
+    client.eegReadings.subscribe(onReading); setStatus('Connected. Streaming live EEG.');
+  } catch (e){ setStatus('Connection failed: '+e.message+'  (Chrome/Edge, Bluetooth on.)'); }
+});
+let simTimer=null, simPhi=0;
+document.getElementById('simBtn').addEventListener('click', () => {
+  if (simTimer){ clearInterval(simTimer); simTimer=null; setStatus('Simulation stopped.'); return; }
+  setStatus('Simulating (no headset).');
+  simTimer = setInterval(() => { simPhi+=0.05; const s=[];
+    for (let i=0;i<12;i++){ const t=simPhi+i/FS;
+      s.push(Math.sin(2*Math.PI*10*t)*(20+15*Math.sin(simPhi/3)) + Math.sin(2*Math.PI*20*t)*8 + (Math.sin(simPhi*7+i)+Math.sin(simPhi*13+i*2))*5); }
+    for (let c=0;c<CH;c++) onReading({electrode:c, samples:s}); }, 47);
+});
+
+window.__muse = { onReading, buffers, nodes, conns, cfg, state: () => ({ filled, writePos, lastPacket }) };
+addEventListener('resize', drawWires);
+frame();
+</script>
+</body>
+</html>
