@@ -89,6 +89,28 @@ let writePos = 0, filled = 0;
 const bandVals = {}; for (const k in BANDS) bandVals[k] = 0;
 const SMOOTH = 0.15;            // 0 = frozen, 1 = no smoothing. EDIT HERE.
 
+// ---- Phase 2: preprocess bands into steady 0..1 features -------------------
+// Each band is stretched across its own LIVE min..max (adaptive), so a feature
+// uses its full range instead of the compressed raw relative-power number.
+// This is the "features" layer that will later drive the AI image prompt.
+const featureVals = {}; for (const k in BANDS) featureVals[k] = 0;
+const fMin = {}, fMax = {};
+for (const k in BANDS) { fMin[k] = 1; fMax[k] = 0; }
+const NORM_RELAX = 0.0015;      // how fast the live range relaxes back. EDIT HERE.
+
+function toFeatures(bands) {
+  const out = {};
+  for (const k in bands) {
+    const v = bands[k];
+    // jump instantly to a new extreme, then relax slowly back toward the signal
+    if (v < fMin[k]) fMin[k] = v; else fMin[k] += (v - fMin[k]) * NORM_RELAX;
+    if (v > fMax[k]) fMax[k] = v; else fMax[k] += (v - fMax[k]) * NORM_RELAX;
+    const range = Math.max(1e-6, fMax[k] - fMin[k]);
+    out[k] = Math.min(1, Math.max(0, (v - fMin[k]) / range));
+  }
+  return out;
+}
+
 // ---- build the band bars UI ------------------------------------------------
 const bandsEl = document.getElementById('bands');
 const barEls = {};
@@ -101,6 +123,18 @@ for (const name in BANDS) {
   bandsEl.appendChild(wrap);
   barEls[name] = document.getElementById(`bar-${name}`);
 }
+
+// ---- features readout panel (top-centre) — the preprocessed 0..100 values --
+const featPanel = document.createElement('div');
+featPanel.style.cssText = 'position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:10;display:flex;gap:16px;font-size:12px;color:#aeb8c9;background:rgba(12,14,20,0.6);padding:8px 14px;border-radius:10px;backdrop-filter:blur(6px);';
+for (const k in BANDS) {
+  const s = document.createElement('span');
+  s.innerHTML = `<b style="color:${BAND_COLORS[k]}">${k}</b> <span id="feat-${k}">0</span>`;
+  featPanel.appendChild(s);
+}
+document.body.appendChild(featPanel);
+const featEls = {};
+for (const k in BANDS) featEls[k] = document.getElementById(`feat-${k}`);
 
 // ---- FFT (iterative radix-2 Cooley-Tukey) ----------------------------------
 function fft(re, im) {
@@ -182,8 +216,14 @@ function tick() {
       barEls[k].style.height = Math.min(100, bandVals[k] * 260) + '%';
       document.getElementById(`val-${k}`).textContent = Math.round(bandVals[k] * 100);
     }
+    // Phase 2: raw bands -> steady, self-calibrating 0..1 features
+    const f = toFeatures(bandVals);
+    for (const k in BANDS) {
+      featureVals[k] = f[k];
+      featEls[k].textContent = Math.round(f[k] * 100);
+    }
   }
-  drawArt(bandVals);
+  drawArt(featureVals);   // the art now runs on the preprocessed features
   requestAnimationFrame(tick);
 }
 
