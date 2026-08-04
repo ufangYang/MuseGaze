@@ -3,106 +3,107 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>My Muse Interface</title>
+<title>MuseRave — Visualise</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
   body {
-    margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-    background: #0b0d12; color: #e8ecf3; overflow: hidden;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: #05060a; color: #e8ecf3; overflow: hidden;
   }
   #ui {
     position: fixed; top: 0; left: 0; right: 0; z-index: 10;
-    display: flex; align-items: center; gap: 14px;
-    padding: 12px 16px; background: rgba(12,14,20,0.7);
-    backdrop-filter: blur(8px); border-bottom: 1px solid #1e2330;
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px; background: rgba(8,10,16,0.55);
+    backdrop-filter: blur(10px); border-bottom: 1px solid #141824;
   }
   button {
-    font-size: 15px; font-weight: 600; padding: 9px 16px; border-radius: 10px;
-    border: 1px solid #2a3142; background: #1a2030; color: #e8ecf3; cursor: pointer;
+    font-size: 14px; font-weight: 600; padding: 8px 14px; border-radius: 10px;
+    border: 1px solid #2a3142; background: #141a28; color: #e8ecf3; cursor: pointer;
   }
-  button:hover { background: #232c40; }
+  button:hover { background: #1e2740; }
   button.primary { background: #3b82f6; border-color: #3b82f6; color: #fff; }
   button.primary:hover { background: #2f6fe0; }
-  #status { font-size: 13px; color: #9aa5b8; }
-  #bands {
-    position: fixed; left: 16px; bottom: 16px; z-index: 10;
-    display: flex; gap: 10px; align-items: flex-end; height: 180px;
-  }
-  .band { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 54px; }
-  .bar-wrap { width: 34px; height: 140px; background: #161b26; border-radius: 8px;
-    display: flex; align-items: flex-end; overflow: hidden; }
-  .bar { width: 100%; height: 0%; border-radius: 8px 8px 0 0; transition: height 0.12s linear; }
-  .band-label { font-size: 12px; color: #aeb8c9; }
-  .band-val { font-size: 11px; color: #6b7488; font-variant-numeric: tabular-nums; }
+  /* segmented mode switch */
+  #modes { display: flex; background: #10131d; border: 1px solid #222a3a; border-radius: 10px; overflow: hidden; }
+  #modes button { border: 0; border-radius: 0; background: transparent; padding: 8px 16px; }
+  #modes button.on { background: #3b82f6; color: #fff; }
+  #status { font-size: 13px; color: #8b95a8; }
+  .spacer { flex: 1; }
+  #heart { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #9aa5b8;
+           font-variant-numeric: tabular-nums; }
+  #heart .hh { color: #ef4444; font-size: 16px; transition: transform 0.05s; display: inline-block; }
+  #live { width: 9px; height: 9px; border-radius: 50%; background: #ef4444; }
+  a.ctrl { font-size: 13px; color: #8b95a8; text-decoration: none; border: 1px solid #222a3a;
+           padding: 8px 12px; border-radius: 10px; }
+  a.ctrl:hover { color: #e8ecf3; background: #141a28; }
   canvas { display: block; position: fixed; inset: 0; z-index: 1; }
-  #hint { position: fixed; right: 16px; bottom: 16px; z-index: 10; max-width: 300px;
-    font-size: 12px; color: #7a8498; text-align: right; line-height: 1.5; }
+  /* poetry / hint at the bottom */
+  #poem {
+    position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%); z-index: 8;
+    max-width: min(900px, 86vw); text-align: center; pointer-events: none;
+    font-size: 20px; line-height: 1.7; letter-spacing: 0.3px;
+    color: #eef2fb; text-shadow: 0 2px 24px rgba(0,0,0,0.9);
+    font-family: "Iowan Old Style", Palatino, Georgia, serif;
+  }
+  #poem .old { opacity: 0.32; font-size: 16px; }
+  #hint { position: fixed; right: 16px; bottom: 12px; z-index: 8; max-width: 300px;
+    font-size: 12px; color: #56607a; text-align: right; line-height: 1.5; }
 </style>
 </head>
 <body>
   <div id="ui">
     <button id="connectBtn" class="primary">Connect Muse</button>
-    <button id="simBtn">Simulate (no headset)</button>
+    <button id="simBtn">Simulate</button>
+    <div id="modes">
+      <button data-mode="flower" class="on">Flower</button>
+      <button data-mode="neural">Neural</button>
+      <button data-mode="odyssey">Odyssey</button>
+    </div>
     <span id="status">Not connected.</span>
+    <div class="spacer"></div>
+    <div id="heart" title="Heart rate from Muse 2 PPG"><span class="hh">♥</span><span id="bpm">--</span> bpm</div>
+    <span id="live" title="EEG stream"></span>
+    <a class="ctrl" href="./control.html">Control ▸</a>
   </div>
 
   <canvas id="art"></canvas>
-
-  <div id="bands">
-    <!-- filled by JS -->
-  </div>
-  <div id="hint">Put the band on, click Connect, pick your Muse in the Bluetooth dialog.<br>Close your eyes to watch Alpha rise.</div>
+  <div id="poem"></div>
+  <div id="hint">Put the band on, click Connect, pick your Muse.<br>Close your eyes to watch Alpha rise.</div>
 
 <script type="module">
 // ============================================================================
-//  MY MUSE INTERFACE — a personal base you own. Reuses muse-js for the
-//  Bluetooth + EEG plumbing; everything else here is yours to change.
-//  Open in Chrome or Edge (Safari/Firefox can't do Web Bluetooth).
+//  MuseRave — VISUALISE page. Pick-and-watch only: no knobs here.
+//  All parameters (channel, PSD, smoothing, wiring) live on the Control page.
+//  This page reads the Muse over Web Bluetooth, turns it into 5 band powers +
+//  a heartbeat, and renders one of three visuals. Chrome/Edge only.
 // ============================================================================
-
 import { MuseClient } from 'https://esm.sh/muse-js';
 
 // ---- signal config ---------------------------------------------------------
-const FS = 256;                 // Muse sample rate (Hz)
-const N  = 256;                 // FFT window = 1 second of data
-// Band edges in Hz. EDIT HERE if you want different bands.
-const BANDS = {
-  Delta: [1, 4],
-  Theta: [4, 8],
-  Alpha: [8, 13],
-  Beta:  [13, 30],
-  Gamma: [30, 44],
-};
-// Colour per band (also used to tint the art). EDIT HERE.
-const BAND_COLORS = {
-  Delta: '#8b5cf6', Theta: '#3b82f6', Alpha: '#22c55e',
-  Beta:  '#f59e0b', Gamma: '#ef4444',
-};
+const FS = 256, N = 256, CH = 4;          // 256 Hz, 1 s FFT window, 4 EEG electrodes
+const BANDS = { Delta:[1,4], Theta:[4,8], Alpha:[8,13], Beta:[13,30], Gamma:[30,44] };
+const BAND_COLORS = { Delta:'#8b5cf6', Theta:'#3b82f6', Alpha:'#22c55e', Beta:'#f59e0b', Gamma:'#ef4444' };
+const BAND_HUE = { Delta:265, Theta:217, Alpha:142, Beta:38, Gamma:0 };
 
-// ---- per-channel ring buffers (4 EEG electrodes) ---------------------------
-const CH = 4;                   // TP9, AF7, AF8, TP10
+// read the Control page's saved settings if present (channel to analyse, smoothing)
+let CFG = { smooth: 0.15, avgChannels: true, plotCh: 1 };
+try { Object.assign(CFG, JSON.parse(localStorage.getItem('muserave.cfg') || '{}')); } catch {}
+addEventListener('storage', e => { if (e.key === 'muserave.cfg') { try { Object.assign(CFG, JSON.parse(e.newValue)); } catch {} } });
+
+// ---- per-channel ring buffers ----------------------------------------------
 const buffers = Array.from({ length: CH }, () => new Float32Array(N));
-let writePos = 0, filled = 0;
+let writePos = 0, filled = 0, lastPacket = 0;
 
-// live smoothed band values (relative power 0..1), shared with the art
-const bandVals = {}; for (const k in BANDS) bandVals[k] = 0;
-let SMOOTH = 0.15;             // 0 = frozen, 1 = no smoothing. Slider adjusts it.
-
-// ---- Phase 2: preprocess bands into steady 0..1 features -------------------
-// Each band is stretched across its own LIVE min..max (adaptive), so a feature
-// uses its full range instead of the compressed raw relative-power number.
-// This is the "features" layer that will later drive the AI image prompt.
-const featureVals = {}; for (const k in BANDS) featureVals[k] = 0;
-const fMin = {}, fMax = {};
-for (const k in BANDS) { fMin[k] = 1; fMax[k] = 0; }
-const NORM_RELAX = 0.0015;      // how fast the live range relaxes back. EDIT HERE.
-
+const bandVals = {};    for (const k in BANDS) bandVals[k] = 0;   // smoothed relative power 0..1
+const featureVals = {}; for (const k in BANDS) featureVals[k] = 0; // self-calibrated 0..1
+const fMin = {}, fMax = {}; for (const k in BANDS) { fMin[k] = 1; fMax[k] = 0; }
+const NORM_RELAX = 0.0015;
 function toFeatures(bands) {
   const out = {};
   for (const k in bands) {
     const v = bands[k];
-    // jump instantly to a new extreme, then relax slowly back toward the signal
     if (v < fMin[k]) fMin[k] = v; else fMin[k] += (v - fMin[k]) * NORM_RELAX;
     if (v > fMax[k]) fMax[k] = v; else fMax[k] += (v - fMax[k]) * NORM_RELAX;
     const range = Math.max(1e-6, fMax[k] - fMin[k]);
@@ -110,338 +111,364 @@ function toFeatures(bands) {
   }
   return out;
 }
+function dominant(f) { return Object.entries(f).sort((a,b)=>b[1]-a[1]); }
 
-// ---- Phase 3: turn the strongest bands into a text prompt ------------------
-// The two most-active bands become the mood + texture of an image prompt.
-// EDIT HERE to change the words each brain state produces.
-const PROMPT_WORDS = {
-  Delta: { mood: 'deep and dreamlike',  tex: 'heavy flowing shapes',  col: 'deep indigo and violet' },
-  Theta: { mood: 'calm and drifting',   tex: 'soft misty waves',      col: 'blue and teal' },
-  Alpha: { mood: 'serene and glowing',  tex: 'smooth flowing curves', col: 'green and warm gold' },
-  Beta:  { mood: 'alert and electric',  tex: 'sharp bright lines',    col: 'amber and orange' },
-  Gamma: { mood: 'intense and radiant', tex: 'crystalline bursts',    col: 'vivid red and white' },
-};
-function buildPrompt(features) {
-  const sorted = Object.entries(features).sort((a, b) => b[1] - a[1]);
-  const p = PROMPT_WORDS[sorted[0][0]], s = PROMPT_WORDS[sorted[1][0]];
-  return `a ${p.mood} abstract landscape, ${p.tex} with ${s.tex}, ${p.col}, dreamlike, highly detailed`;
-}
-
-// ---- build the band bars UI ------------------------------------------------
-const bandsEl = document.getElementById('bands');
-const barEls = {};
-for (const name in BANDS) {
-  const wrap = document.createElement('div'); wrap.className = 'band';
-  wrap.innerHTML = `<div class="band-val" id="val-${name}">0</div>
-    <div class="bar-wrap"><div class="bar" id="bar-${name}"
-      style="background:${BAND_COLORS[name]}"></div></div>
-    <div class="band-label">${name}</div>`;
-  bandsEl.appendChild(wrap);
-  barEls[name] = document.getElementById(`bar-${name}`);
-}
-
-// ---- features readout panel (top-centre) — the preprocessed 0..100 values --
-const featPanel = document.createElement('div');
-featPanel.style.cssText = 'position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:10;display:flex;gap:16px;font-size:12px;color:#aeb8c9;background:rgba(12,14,20,0.6);padding:8px 14px;border-radius:10px;backdrop-filter:blur(6px);';
-for (const k in BANDS) {
-  const s = document.createElement('span');
-  s.innerHTML = `<b style="color:${BAND_COLORS[k]}">${k}</b> <span id="feat-${k}">0</span>`;
-  featPanel.appendChild(s);
-}
-document.body.appendChild(featPanel);
-const featEls = {};
-for (const k in BANDS) featEls[k] = document.getElementById(`feat-${k}`);
-
-// ============================================================================
-//  Verification + controls: raw EEG scope, LIVE indicator, plot chooser.
-//  This is the "is it really my brain?" panel — blink and the wave jumps.
-// ============================================================================
-let lastPacket = 0;     // stamped in onReading; drives the LIVE light
-let PLOT_CH = 1;        // which electrode to plot (0=TP9 1=AF7 2=AF8 3=TP10)
-
-const mon = document.createElement('div');
-mon.style.cssText = 'position:fixed;top:64px;left:16px;z-index:10;width:320px;background:rgba(12,14,20,0.72);border:1px solid #1e2330;border-radius:12px;padding:12px;backdrop-filter:blur(6px);font-size:12px;color:#aeb8c9;';
-mon.innerHTML = `
-  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-    <span id="liveDot" style="width:10px;height:10px;border-radius:50%;background:#ef4444;"></span>
-    <b id="liveText" style="color:#ef4444;">no data yet</b>
-  </div>
-  <div style="margin-bottom:6px;color:#7a8498;">Raw EEG — proof it's you. Blink hard and watch it jump:</div>
-  <canvas id="scope" width="296" height="90" style="width:296px;height:90px;background:#0b0d12;border-radius:8px;display:block;"></canvas>
-  <div style="margin:10px 0 4px;color:#7a8498;">Power spectrum 1–45 Hz — the five bands shaded:</div>
-  <canvas id="spec" width="296" height="90" style="width:296px;height:90px;background:#0b0d12;border-radius:8px;display:block;"></canvas>
-  <div style="display:flex;gap:10px;align-items:center;margin-top:10px;">
-    <label style="width:52px;">Plot</label>
-    <select id="chSel" style="flex:1;background:#161b26;color:#e8ecf3;border:1px solid #2a3142;border-radius:6px;padding:3px;">
-      <option value="0">TP9 (left ear)</option>
-      <option value="1" selected>AF7 (left brow)</option>
-      <option value="2">AF8 (right brow)</option>
-      <option value="3">TP10 (right ear)</option>
-    </select>
-  </div>
-  <div style="display:flex;gap:10px;align-items:center;margin-top:8px;">
-    <label style="width:52px;">Smooth</label>
-    <input id="smoothSl" type="range" min="0.02" max="0.5" step="0.01" value="0.15" style="flex:1;">
-  </div>`;
-document.body.appendChild(mon);
-const scope = document.getElementById('scope');
-const sctx = scope.getContext('2d');
-const spec = document.getElementById('spec');
-const spctx = spec.getContext('2d');
-const liveDot = document.getElementById('liveDot');
-const liveText = document.getElementById('liveText');
-document.getElementById('chSel').addEventListener('change', e => PLOT_CH = +e.target.value);
-document.getElementById('smoothSl').addEventListener('input', e => SMOOTH = +e.target.value);
-
-// bottom prompt bar (Phase 3: your bands, written as words)
-const promptBar = document.createElement('div');
-promptBar.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:10;max-width:70vw;background:rgba(12,14,20,0.72);border:1px solid #1e2330;border-radius:10px;padding:8px 16px;font-size:13px;color:#e8ecf3;text-align:center;';
-promptBar.innerHTML = `<span style="color:#7a8498;">prompt from your brain →</span> <span id="promptText">…</span>`;
-document.body.appendChild(promptBar);
-const promptText = document.getElementById('promptText');
-let lastPrompt = 0;
-
-// --- Lab / Clean view toggle: one place for the art, one for the analysis ---
-const viewBtn = document.createElement('button');
-let labOn = true;
-viewBtn.textContent = 'Lab view: ON';
-viewBtn.onclick = () => {
-  labOn = !labOn;
-  viewBtn.textContent = 'Lab view: ' + (labOn ? 'ON' : 'OFF');
-  mon.style.display = labOn ? '' : 'none';
-  featPanel.style.display = labOn ? 'flex' : 'none';
-  bandsEl.style.display = labOn ? 'flex' : 'none';
-  promptBar.style.display = labOn ? '' : 'none';
-};
-document.getElementById('ui').appendChild(viewBtn);
-
-// --- live power spectrum (PSD): frequency on X, power on Y, bands shaded ----
-function drawSpectrum() {
-  const w = spec.width, h = spec.height, maxHz = 45;
-  spctx.clearRect(0, 0, w, h);
-  for (const name in BANDS) {                       // shade each band's frequency region
-    const [lo, hi] = BANDS[name];
-    const x0 = lo / maxHz * w, x1 = Math.min(hi, maxHz) / maxHz * w;
-    spctx.fillStyle = BAND_COLORS[name] + '22';
-    spctx.fillRect(x0, 0, x1 - x0, h);
-  }
-  let mx = 1e-9;
-  for (let k = 1; k <= maxHz; k++) if (spectrum[k] > mx) mx = spectrum[k];
-  for (let k = 1; k <= maxHz; k++) {                // one bar per 1-Hz bin, coloured by band
-    let col = '#4b5563';
-    for (const name in BANDS) { const [lo, hi] = BANDS[name]; if (k >= lo && k < hi) col = BAND_COLORS[name]; }
-    const x = k / maxHz * w, bh = Math.min(1, spectrum[k] / mx) * (h - 4);
-    spctx.fillStyle = col;
-    spctx.fillRect(x, h - bh, Math.max(1, w / maxHz - 1), bh);
-  }
-}
-
-function drawScope() {
-  const w = scope.width, h = scope.height;
-  sctx.clearRect(0, 0, w, h);
-  let mx = 1;                                   // auto-scale so it always fills
-  for (let i = 0; i < N; i++) { const a = Math.abs(buffers[PLOT_CH][i]); if (a > mx) mx = a; }
-  sctx.strokeStyle = '#3b82f6'; sctx.lineWidth = 1;
-  sctx.beginPath();
-  for (let i = 0; i < N; i++) {
-    const v = buffers[PLOT_CH][(writePos + i) % N];
-    const x = i / (N - 1) * w;
-    const y = h / 2 - (v / mx) * (h / 2 * 0.9);
-    i === 0 ? sctx.moveTo(x, y) : sctx.lineTo(x, y);
-  }
-  sctx.stroke();
-}
-
-function updateLive() {
-  const live = lastPacket > 0 && (performance.now() - lastPacket) < 600;
-  liveDot.style.background = live ? '#22c55e' : '#ef4444';
-  liveText.textContent = live ? 'LIVE • EEG streaming' : (lastPacket ? 'signal lost' : 'no data yet');
-  liveText.style.color = live ? '#22c55e' : '#ef4444';
-}
-
-function updatePrompt() {
-  const now = performance.now();
-  if (now - lastPrompt < 1000) return;         // refresh the words ~1x/second
-  lastPrompt = now;
-  promptText.textContent = buildPrompt(featureVals);
-}
-
-// ---- FFT (iterative radix-2 Cooley-Tukey) ----------------------------------
+// ---- FFT (iterative radix-2) ----------------------------------------------
 function fft(re, im) {
   const n = re.length;
   for (let i = 1, j = 0; i < n; i++) {
-    let bit = n >> 1;
-    for (; j & bit; bit >>= 1) j ^= bit;
-    j ^= bit;
-    if (i < j) { const tr = re[i]; re[i] = re[j]; re[j] = tr;
-                 const ti = im[i]; im[i] = im[j]; im[j] = ti; }
+    let bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit;
+    if (i < j) { const tr=re[i];re[i]=re[j];re[j]=tr; const ti=im[i];im[i]=im[j];im[j]=ti; }
   }
   for (let len = 2; len <= n; len <<= 1) {
-    const ang = -2 * Math.PI / len;
-    const wlRe = Math.cos(ang), wlIm = Math.sin(ang);
+    const ang = -2*Math.PI/len, wlRe = Math.cos(ang), wlIm = Math.sin(ang);
     for (let i = 0; i < n; i += len) {
       let wRe = 1, wIm = 0;
-      for (let k = 0; k < len / 2; k++) {
-        const a = i + k, b = i + k + len / 2;
-        const vRe = re[b] * wRe - im[b] * wIm;
-        const vIm = re[b] * wIm + im[b] * wRe;
-        re[b] = re[a] - vRe; im[b] = im[a] - vIm;
-        re[a] += vRe;        im[a] += vIm;
-        const nwRe = wRe * wlRe - wIm * wlIm;
-        wIm = wRe * wlIm + wIm * wlRe; wRe = nwRe;
+      for (let k = 0; k < len/2; k++) {
+        const a = i+k, b = i+k+len/2;
+        const vRe = re[b]*wRe - im[b]*wIm, vIm = re[b]*wIm + im[b]*wRe;
+        re[b] = re[a]-vRe; im[b] = im[a]-vIm; re[a] += vRe; im[a] += vIm;
+        const nw = wRe*wlRe - wIm*wlIm; wIm = wRe*wlIm + wIm*wlRe; wRe = nw;
       }
     }
   }
 }
-
-// ---- turn the latest window into 5 band powers -----------------------------
 const hann = new Float32Array(N);
-for (let i = 0; i < N; i++) hann[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1));
-
-const spectrum = new Float32Array(N / 2);      // avg power per 1-Hz bin, for the PSD plot
+for (let i = 0; i < N; i++) hann[i] = 0.5 - 0.5*Math.cos(2*Math.PI*i/(N-1));
+const spectrum = new Float32Array(N/2);
 
 function computeBands() {
-  if (filled < N) return null;                 // wait for a full second of data
+  if (filled < N) return null;
   const power = {}; for (const k in BANDS) power[k] = 0;
-  const acc = new Float32Array(N / 2);
-  for (let c = 0; c < CH; c++) {
+  const acc = new Float32Array(N/2);
+  // which channels feed the analysis: all (averaged) or the one chosen on Control page
+  const chans = CFG.avgChannels ? [0,1,2,3] : [CFG.plotCh];
+  for (const c of chans) {
     const re = new Float32Array(N), im = new Float32Array(N);
-    // read ring buffer in time order, remove mean, apply Hann window
     let mean = 0; for (let i = 0; i < N; i++) mean += buffers[c][i]; mean /= N;
-    for (let i = 0; i < N; i++) {
-      const idx = (writePos + i) % N;
-      re[i] = (buffers[c][idx] - mean) * hann[i];
-    }
+    for (let i = 0; i < N; i++) re[i] = (buffers[c][(writePos+i)%N] - mean) * hann[i];
     fft(re, im);
-    for (let k = 0; k < N / 2; k++) acc[k] += re[k] * re[k] + im[k] * im[k];  // power spectrum
+    for (let k = 0; k < N/2; k++) acc[k] += re[k]*re[k] + im[k]*im[k];
   }
-  for (let k = 0; k < N / 2; k++) spectrum[k] = acc[k] / CH;   // averaged over channels, 1 Hz/bin
-  for (const name in BANDS) {
-    const [lo, hi] = BANDS[name];
-    for (let k = Math.round(lo); k < Math.round(hi); k++) power[name] += spectrum[k];
-  }
+  for (let k = 0; k < N/2; k++) spectrum[k] = acc[k] / chans.length;
+  for (const name in BANDS) { const [lo,hi] = BANDS[name];
+    for (let k = Math.round(lo); k < Math.round(hi); k++) power[name] += spectrum[k]; }
   let total = 0; for (const k in BANDS) total += power[k];
   if (total <= 0) return null;
-  const rel = {}; for (const k in BANDS) rel[k] = power[k] / total;   // 0..1
+  const rel = {}; for (const k in BANDS) rel[k] = power[k]/total;
   return rel;
 }
 
-// ---- receive EEG packets from the Muse -------------------------------------
+// ---- EEG packets -----------------------------------------------------------
 function onReading(r) {
-  // r.electrode: 0=TP9 1=AF7 2=AF8 3=TP10 4=AUX ; r.samples: 12 microvolt values
   if (r.electrode > 3) return;
-  lastPacket = performance.now();          // stamp: proves data is arriving
-  for (let i = 0; i < r.samples.length; i++) {
-    buffers[r.electrode][(writePos + i) % N] = r.samples[i];
-  }
-  // advance the shared write head once per packet-set (use TP10 as the clock)
-  if (r.electrode === 3) {
-    writePos = (writePos + r.samples.length) % N;
-    filled = Math.min(N, filled + r.samples.length);
-  }
-}
-
-// ---- main loop: compute bands, update bars + art ---------------------------
-function tick() {
-  const rel = computeBands();
-  if (rel) {
-    for (const k in BANDS) {
-      bandVals[k] += (rel[k] - bandVals[k]) * SMOOTH;
-      barEls[k].style.height = Math.min(100, bandVals[k] * 260) + '%';
-      document.getElementById(`val-${k}`).textContent = Math.round(bandVals[k] * 100);
-    }
-    // Phase 2: raw bands -> steady, self-calibrating 0..1 features
-    const f = toFeatures(bandVals);
-    for (const k in BANDS) {
-      featureVals[k] = f[k];
-      featEls[k].textContent = Math.round(f[k] * 100);
-    }
-  }
-  drawScope();            // raw EEG waveform (verification)
-  drawSpectrum();         // live power spectrum with bands shaded
-  updateLive();           // LIVE / no-data light
-  updatePrompt();         // Phase 3: bands -> words, ~1x/second
-  drawArt(featureVals);   // the art now runs on the preprocessed features
-  requestAnimationFrame(tick);
+  lastPacket = performance.now();
+  for (let i = 0; i < r.samples.length; i++) buffers[r.electrode][(writePos+i)%N] = r.samples[i];
+  if (r.electrode === 3) { writePos = (writePos + r.samples.length) % N; filled = Math.min(N, filled + r.samples.length); }
 }
 
 // ============================================================================
-//  THE ART — this is YOUR canvas. Everything below is meant to be rewritten.
-//  bandVals.Alpha / .Beta / .Theta / .Delta / .Gamma are each 0..1, live.
+//  HEARTBEAT — Muse 2 PPG. Detect beats on the IR channel, derive BPM + a
+//  pulse envelope (0..1, spikes each beat) that the visuals breathe with.
+//  Degrades silently on the original Muse (no PPG -> bpm stays --).
+// ============================================================================
+let ppgMean = 0, ppgAmp = 1, ppgPrev = 0, ppgRising = false;
+let lastBeat = 0, bpm = 0; const ibis = [];
+let pulse = 0;                              // decays in tick(), spikes to 1 on a beat
+function onPpg(r) {
+  if (r.ppgChannel !== 1) return;           // 1 = infrared, the cleanest for HR
+  const now = performance.now();
+  for (const s of r.samples) {
+    ppgMean += (s - ppgMean) * 0.01;        // DC removal
+    const ac = s - ppgMean;
+    ppgAmp += (Math.abs(ac) - ppgAmp) * 0.01;
+    const rising = ac > ppgPrev;
+    if (ppgRising && !rising && ac > ppgAmp * 0.6 && now - lastBeat > 300) {
+      if (lastBeat) { ibis.push(now - lastBeat); if (ibis.length > 6) ibis.shift();
+        const s2 = [...ibis].sort((a,b)=>a-b); const med = s2[s2.length>>1];
+        if (med > 300 && med < 1500) bpm = Math.round(60000 / med); }
+      lastBeat = now; pulse = 1;
+    }
+    ppgRising = rising; ppgPrev = ac;
+  }
+}
+
+// ============================================================================
+//  POETRY — frequency -> words. The two strongest bands choose the mood and
+//  imagery; a template assembles a line of verse. Shown at the bottom on every
+//  mode; it is the whole point of Odyssey.
+// ============================================================================
+const WORDS = {
+  Delta: ['the wine-dark deep','old gods','the drowned hall','slow tide','black sleep','the abyss','shadow'],
+  Theta: ['grey mist','a distant shore','the drifting raft','soft rain','long memory','the road home','dusk'],
+  Alpha: ['dawn','the olive grove','still water','golden light','a calm harbor','warm wind','open sky'],
+  Beta:  ['bronze spears','racing oars','a sudden storm','sharp cliffs','the hunt','white lightning','the war-cry'],
+  Gamma: ['white fire','the burning sky','the god’s voice','the blinding sun','a thunderbolt','a radiant crown'],
+};
+const TEMPLATES = [
+  (a,b,c)=>`And ${a}, ${b}, where ${c} waits.`,
+  (a,b,c)=>`${cap(a)} rises; ${b} answers.`,
+  (a,b,c)=>`They sailed past ${a} toward ${b}.`,
+  (a,b,c)=>`In ${a} I saw ${b}, and knew ${c}.`,
+  (a,b,c)=>`${cap(a)} and ${b} — still the sea carries me.`,
+];
+function cap(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
+function pick(arr, seed){ return arr[Math.floor(seed * arr.length) % arr.length]; }
+let poemLines = [], lastLine = 0, tmplIdx = 0;
+function composeLine(f) {
+  const d = dominant(f); const A = d[0][0], B = d[1][0], C = d[(d.length-1)]?.[0] || d[2][0];
+  const a = pick(WORDS[A], f[A]+0.13), b = pick(WORDS[B], f[B]+0.37), c = pick(WORDS[C], f[C]+0.71);
+  const line = TEMPLATES[tmplIdx % TEMPLATES.length](a, b, c);
+  tmplIdx++;
+  return line;
+}
+const poemEl = document.getElementById('poem');
+function updatePoem(f, everyMs) {
+  const now = performance.now();
+  if (now - lastLine < everyMs) return null;
+  lastLine = now;
+  const line = composeLine(f);
+  poemLines.push(line); if (poemLines.length > 4) poemLines.shift();
+  return line;                              // return the fresh line so Odyssey can turn it into form
+}
+function renderPoem(showHistory) {
+  if (!poemLines.length) { poemEl.innerHTML = ''; return; }
+  if (showHistory) {
+    poemEl.innerHTML = poemLines.slice(0,-1).map(l=>`<div class="old">${l}</div>`).join('')
+      + `<div>${poemLines[poemLines.length-1]}</div>`;
+  } else {
+    poemEl.innerHTML = `<div>${poemLines[poemLines.length-1]}</div>`;
+  }
+}
+
+// ============================================================================
+//  VISUAL 1 — FLOWER (the original mandala). Alpha blooms it, Beta spins it,
+//  Theta ripples the petals, heartbeat gives it a breath.
 // ============================================================================
 const canvas = document.getElementById('art');
 const ctx = canvas.getContext('2d');
-function resize() { canvas.width = innerWidth; canvas.height = innerHeight; }
+function resize(){ canvas.width = innerWidth; canvas.height = innerHeight; }
 addEventListener('resize', resize); resize();
 
 let phase = 0;
-function drawArt(b) {
+function drawFlower(b) {
   const w = canvas.width, h = canvas.height;
-  ctx.fillStyle = 'rgba(11,13,18,0.18)';     // trail fade. EDIT HERE.
-  ctx.fillRect(0, 0, w, h);
-
-  const cx = w / 2, cy = h / 2;
-  phase += 0.01 + b.Beta * 0.08;              // focus (Beta) speeds it up
+  ctx.fillStyle = 'rgba(5,6,10,0.16)'; ctx.fillRect(0,0,w,h);
+  const cx = w/2, cy = h/2;
+  phase += 0.01 + b.Beta*0.08;
+  const breath = 1 + pulse*0.06;             // heartbeat breath
   const rings = 5;
   for (let i = 0; i < rings; i++) {
-    const t = i / rings;
-    const radius = 60 + t * 220 + b.Alpha * 260;   // calm (Alpha) makes it bloom
-    const hue = (t * 120 + b.Gamma * 200 + phase * 20) % 360;
+    const t = i/rings;
+    const radius = (60 + t*220 + b.Alpha*260) * breath;
+    const hue = (t*120 + b.Gamma*200 + phase*20) % 360;
     ctx.beginPath();
-    for (let a = 0; a <= Math.PI * 2 + 0.1; a += 0.1) {
-      const wobble = Math.sin(a * 6 + phase * (2 + i)) * (8 + b.Theta * 60);
+    for (let a = 0; a <= Math.PI*2 + 0.1; a += 0.1) {
+      const wobble = Math.sin(a*6 + phase*(2+i)) * (8 + b.Theta*60);
       const rr = radius + wobble;
-      const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr;
-      a === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      const x = cx + Math.cos(a)*rr, y = cy + Math.sin(a)*rr;
+      a === 0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
     }
     ctx.closePath();
-    ctx.strokeStyle = `hsla(${hue}, 80%, 60%, ${0.5 - t * 0.3})`;
-    ctx.lineWidth = 2 + b.Delta * 6;
+    ctx.strokeStyle = `hsla(${hue},80%,60%,${0.5 - t*0.3})`;
+    ctx.lineWidth = (2 + b.Delta*6) * (1 + pulse*0.5);
     ctx.stroke();
   }
 }
 
-// ---- connection wiring -----------------------------------------------------
-const statusEl = document.getElementById('status');
-const setStatus = (t) => statusEl.textContent = t;
-
-document.getElementById('connectBtn').addEventListener('click', async () => {
-  try {
-    setStatus('Opening Bluetooth dialog… pick your Muse.');
-    const client = new MuseClient();
-    await client.connect();          // <- triggers the pairing dialog
-    await client.start();
-    client.eegReadings.subscribe(onReading);
-    setStatus('Connected. Streaming live EEG.');
-  } catch (e) {
-    setStatus('Connection failed: ' + e.message + '  (Use Chrome/Edge, Bluetooth on.)');
+// ============================================================================
+//  VISUAL 2 — NEURAL NETWORK FIRING. Nodes accumulate charge and fire; Beta/
+//  Gamma set firing rate + speed, Alpha/Theta set how strongly they connect.
+//  Each firing sends a pulse along edges. Heartbeat swells every node at once.
+// ============================================================================
+const NODES = 64;
+let neurons = [], edges = [], travels = [];
+function initNeural() {
+  neurons = []; edges = [];
+  const w = innerWidth, h = innerHeight;
+  for (let i = 0; i < NODES; i++)
+    neurons.push({ x: Math.random()*w, y: Math.random()*h,
+                   vx:(Math.random()-0.5)*0.15, vy:(Math.random()-0.5)*0.15,
+                   charge: Math.random(), lit: 0 });
+  for (let i = 0; i < NODES; i++) {                 // connect each node to a few nearest
+    const d = neurons.map((n,j)=>({j, r: (n.x-neurons[i].x)**2 + (n.y-neurons[i].y)**2})).sort((a,b)=>a.r-b.r);
+    for (let k = 1; k <= 3; k++) if (d[k]) edges.push([i, d[k].j]);
   }
+  travels = [];
+}
+function drawNeural(b) {
+  const w = canvas.width, h = canvas.height;
+  ctx.fillStyle = 'rgba(5,6,10,0.22)'; ctx.fillRect(0,0,w,h);
+  if (!neurons.length) initNeural();
+  const dom = dominant(featureVals)[0][0], hue = BAND_HUE[dom];
+  const conn = 0.12 + b.Alpha*0.55 + b.Theta*0.3;   // edge brightness = connectivity
+  ctx.lineWidth = 1;
+  for (const [i,j] of edges) {
+    const a = neurons[i], c = neurons[j];
+    ctx.strokeStyle = `hsla(${hue},70%,60%,${conn*0.5})`;
+    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(c.x,c.y); ctx.stroke();
+  }
+  // travelling pulses
+  const speed = 0.015 + b.Gamma*0.06 + b.Beta*0.03;
+  for (const t of travels) {
+    t.t += speed;
+    const a = neurons[t.i], c = neurons[t.j];
+    const x = a.x + (c.x-a.x)*t.t, y = a.y + (c.y-a.y)*t.t;
+    ctx.fillStyle = `hsla(${hue},90%,70%,0.9)`;
+    ctx.beginPath(); ctx.arc(x,y, 3, 0, Math.PI*2); ctx.fill();
+    if (t.t >= 1) neurons[t.j].charge += 0.35;       // arriving pulse excites the target
+  }
+  travels = travels.filter(t => t.t < 1);
+  // integrate + fire
+  const fireRate = 0.006 + b.Beta*0.03 + b.Gamma*0.05;
+  for (let i = 0; i < neurons.length; i++) {
+    const n = neurons[i];
+    n.x += n.vx; n.y += n.vy;
+    if (n.x < 0 || n.x > w) n.vx *= -1; if (n.y < 0 || n.y > h) n.vy *= -1;
+    n.charge += fireRate;
+    n.lit *= 0.90;
+    if (n.charge >= 1) {
+      n.charge = 0; n.lit = 1;
+      for (const [a,c] of edges) if (a === i) travels.push({ i:a, j:c, t:0 });
+    }
+    const r = (2.5 + n.lit*7) * (1 + pulse*0.6);      // heartbeat swell
+    ctx.fillStyle = `hsla(${hue},90%,${55 + n.lit*35}%,${0.5 + n.lit*0.5})`;
+    ctx.beginPath(); ctx.arc(n.x, n.y, r, 0, Math.PI*2); ctx.fill();
+  }
+}
+
+// ============================================================================
+//  VISUAL 3 — ODYSSEY. frequency -> words -> (rewrite) -> image. Every few
+//  seconds the brain writes a line of verse (bottom). Each new line's letters
+//  are cast into the field as glowing motes that flow along a brain-driven
+//  current — the words becoming a living form. [ hook: swap makeImage() for a
+//  real image model later. ]
+// ============================================================================
+let motes = [], flowT = 0;
+function castLineToMotes(line) {
+  const w = innerWidth, h = innerHeight;
+  const chars = line.replace(/\s+/g,'').split('');
+  for (const ch of chars) {
+    motes.push({ x: w*0.5 + (Math.random()-0.5)*80, y: h*0.5 + (Math.random()-0.5)*80,
+                 vx:0, vy:0, ch, life: 1, born: flowT });
+  }
+  if (motes.length > 900) motes.splice(0, motes.length - 900);
+}
+function flowAngle(x, y, t, b) {                    // brain-driven flow field
+  const scale = 0.0016 + b.Beta*0.004;
+  return Math.sin(x*scale + t) * Math.cos(y*scale - t*0.7) * Math.PI * (1 + b.Gamma*2);
+}
+function drawOdyssey(b) {
+  const w = canvas.width, h = canvas.height;
+  ctx.fillStyle = 'rgba(5,6,10,0.14)'; ctx.fillRect(0,0,w,h);
+  flowT += 0.003 + b.Beta*0.01;
+  const dom = dominant(featureVals)[0][0], hue = BAND_HUE[dom];
+  const spd = 0.6 + b.Alpha*1.4 + b.Beta*1.2;
+  ctx.font = '16px "Iowan Old Style", Georgia, serif'; ctx.textAlign = 'center';
+  for (const m of motes) {
+    const ang = flowAngle(m.x, m.y, flowT, b);
+    m.vx = m.vx*0.86 + Math.cos(ang)*spd*0.4;
+    m.vy = m.vy*0.86 + Math.sin(ang)*spd*0.4;
+    m.x += m.vx; m.y += m.vy;
+    if (m.x < 0) m.x += w; if (m.x > w) m.x -= w;
+    if (m.y < 0) m.y += h; if (m.y > h) m.y -= h;
+    m.life -= 0.0016;
+    const l = Math.max(0, m.life);
+    ctx.fillStyle = `hsla(${hue + (1-l)*40},85%,68%,${l*0.85})`;
+    ctx.fillText(m.ch, m.x, m.y);
+  }
+  motes = motes.filter(m => m.life > 0);
+}
+// hook for a future real image model: feed the current line + band state out.
+// eslint-disable-next-line no-unused-vars
+function makeImage(line, features) { /* TODO: POST to an image API, draw result */ }
+
+// ============================================================================
+//  MODE SWITCH + MAIN LOOP
+// ============================================================================
+let mode = 'flower';
+const modeBox = document.getElementById('modes');
+modeBox.addEventListener('click', e => {
+  const btn = e.target.closest('button'); if (!btn) return;
+  mode = btn.dataset.mode;
+  [...modeBox.children].forEach(c => c.classList.toggle('on', c === btn));
+  ctx.fillStyle = '#05060a'; ctx.fillRect(0,0,canvas.width,canvas.height); // wipe on switch
+  if (mode === 'neural') initNeural();
+  poemEl.style.fontSize = mode === 'odyssey' ? '22px' : '20px';
 });
 
-// Simulation: fake, plausible EEG so you can build the art with no headset.
-let simTimer = null;
-let simPhi = 0;
+const liveDot = document.getElementById('live');
+const bpmEl = document.getElementById('bpm');
+const heartGlyph = document.querySelector('#heart .hh');
+
+function tick() {
+  const rel = computeBands();
+  if (rel) {
+    for (const k in BANDS) bandVals[k] += (rel[k] - bandVals[k]) * CFG.smooth;
+    const f = toFeatures(bandVals);
+    for (const k in BANDS) featureVals[k] = f[k];
+  }
+  pulse *= 0.90;                                   // heartbeat envelope decay
+  heartGlyph.style.transform = `scale(${1 + pulse*0.5})`;
+
+  if (mode === 'flower')  drawFlower(featureVals);
+  else if (mode === 'neural') drawNeural(featureVals);
+  else if (mode === 'odyssey') drawOdyssey(featureVals);
+
+  // poetry: a new line every ~4.5 s (odyssey shows the growing stanza + casts motes)
+  const fresh = updatePoem(featureVals, mode === 'odyssey' ? 4500 : 7000);
+  if (fresh && mode === 'odyssey') castLineToMotes(fresh);
+  renderPoem(mode === 'odyssey');
+
+  const live = lastPacket > 0 && performance.now() - lastPacket < 600;
+  liveDot.style.background = live ? '#22c55e' : '#ef4444';
+  bpmEl.textContent = bpm ? bpm : '--';
+  requestAnimationFrame(tick);
+}
+
+// ============================================================================
+//  CONNECTION
+// ============================================================================
+const statusEl = document.getElementById('status');
+const setStatus = t => statusEl.textContent = t;
+document.getElementById('connectBtn').addEventListener('click', async () => {
+  try {
+    setStatus('Opening Bluetooth… pick your Muse.');
+    const client = new MuseClient();
+    client.enablePpg = true;                        // Muse 2 heart rate
+    await client.connect();
+    await client.start();
+    client.eegReadings.subscribe(onReading);
+    if (client.ppgReadings) client.ppgReadings.subscribe(onPpg);
+    setStatus('Connected. Streaming live.');
+  } catch (e) { setStatus('Connection failed: ' + e.message + '  (Chrome/Edge, Bluetooth on.)'); }
+});
+
+// Simulation: fake EEG + a fake ~64 bpm pulse so every mode works with no headset.
+let simTimer = null, simPhi = 0, simBeat = 0;
 document.getElementById('simBtn').addEventListener('click', () => {
   if (simTimer) { clearInterval(simTimer); simTimer = null; setStatus('Simulation stopped.'); return; }
-  setStatus('Simulating fake EEG (no headset).');
+  setStatus('Simulating (no headset).');
   simTimer = setInterval(() => {
     simPhi += 0.05;
     const samples = [];
     for (let i = 0; i < 12; i++) {
-      const t = simPhi + i / FS;
-      const alpha = Math.sin(2 * Math.PI * 10 * t) * (20 + 15 * Math.sin(simPhi / 3));
-      const beta  = Math.sin(2 * Math.PI * 20 * t) * 8;
-      const noise = (Math.sin(simPhi * 7 + i) + Math.sin(simPhi * 13 + i * 2)) * 5;
+      const t = simPhi + i/FS;
+      const alpha = Math.sin(2*Math.PI*10*t) * (20 + 15*Math.sin(simPhi/3));
+      const beta  = Math.sin(2*Math.PI*20*t) * 8;
+      const noise = (Math.sin(simPhi*7+i) + Math.sin(simPhi*13+i*2)) * 5;
       samples.push(alpha + beta + noise);
     }
     for (let c = 0; c < CH; c++) onReading({ electrode: c, samples });
-  }, 47);   // ~21 packet-sets/sec (12 samples each ≈ 256 Hz)
+    if (performance.now() - simBeat > 60000/64) { simBeat = performance.now(); pulse = 1;
+      bpm = 62 + Math.round(4*Math.sin(simPhi/5)); }
+  }, 47);
 });
 
-// debug hook so we can verify ingestion from the console
-window.__muse = { onReading, buffers, state: () => ({ filled, writePos, lastPacket }) };
+// debug hook
+window.__muse = { onReading, onPpg, buffers, state: () => ({ filled, writePos, lastPacket, bpm }) };
 
-tick();   // start the render loop immediately (bars sit at 0 until data flows)
+tick();
 </script>
 </body>
 </html>
