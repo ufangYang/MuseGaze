@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>MuseRave</title>
+<title>MuseRave — Visualiser</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -11,238 +11,100 @@
   body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
     background: #05060a; color: #e8ecf3; overflow: hidden; }
   #ui { position: fixed; top: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center; gap: 12px;
-    padding: 12px 16px; background: rgba(8,10,16,0.55); backdrop-filter: blur(10px); border-bottom: 1px solid #141824; }
+    padding: 12px 16px; background: rgba(8,10,16,0.5); backdrop-filter: blur(10px); border-bottom: 1px solid #141824;
+    transition: opacity .4s; }
+  body.present #ui { opacity: 0; pointer-events: none; }   /* fade the bar in present mode */
   button { font-size: 14px; font-weight: 600; padding: 8px 14px; border-radius: 10px;
     border: 1px solid #2a3142; background: #141a28; color: #e8ecf3; cursor: pointer; }
   button:hover { background: #1e2740; }
-  button.primary { background: #3b82f6; border-color: #3b82f6; color: #fff; }
-  button.primary:hover { background: #2f6fe0; }
   #modes { display: flex; background: #10131d; border: 1px solid #222a3a; border-radius: 10px; overflow: hidden; }
   #modes button { border: 0; border-radius: 0; background: transparent; padding: 8px 16px; }
   #modes button.on { background: #3b82f6; color: #fff; }
-  #status { font-size: 13px; color: #8b95a8; }
+  #status { font-size: 13px; }
   .spacer { flex: 1; }
-  #heart { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #9aa5b8; font-variant-numeric: tabular-nums; }
-  #heart .hh { color: #ef4444; font-size: 16px; transition: transform 0.05s; display: inline-block; }
-  #live { width: 9px; height: 9px; border-radius: 50%; background: #ef4444; }
-  canvas#art { display: block; position: fixed; inset: 0; z-index: 1; }
-
-  /* ---- in-page control panel (same program, one connection) ---- */
-  #panel { position: fixed; top: 60px; left: 12px; z-index: 12; width: 300px;
-    background: rgba(13,17,27,0.94); border: 1px solid #26304a; border-radius: 14px;
-    box-shadow: 0 14px 40px rgba(0,0,0,0.5); padding: 14px; display: none; }
-  #panel.open { display: block; }
-  #panel h3 { margin: 2px 0 8px; font-size: 12px; letter-spacing: 0.4px; text-transform: uppercase; color: #7f8aa0; }
-  #panel .sec { border-top: 1px solid #1b2233; margin-top: 12px; padding-top: 12px; }
-  #panel select, #panel input[type=range] { width: 100%; }
-  #panel select { background:#161b26; color:#e8ecf3; border:1px solid #2a3142; border-radius:6px; padding:5px; }
-  #panel .row { display:flex; align-items:center; gap:8px; margin-top:8px; font-size:12px; color:#aeb8c9; }
-  #panel .row label { width: 70px; color:#7f8aa0; }
-  #scope { width: 272px; height: 60px; background:#0a0d14; border-radius:8px; display:block; margin-top:6px; }
-  .feats { display:flex; gap:6px; align-items:flex-end; height:54px; margin-top:8px; }
-  .feat { flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; }
-  .feat .barwrap { width:100%; height:40px; background:#161b26; border-radius:4px; display:flex; align-items:flex-end; }
-  .feat .bar { width:100%; height:2%; border-radius:4px; }
-  .feat label { font-size:10px; color:#8b95a8; display:flex; align-items:center; gap:3px; cursor:pointer; }
-  #story { margin-top:8px; font-family:"Iowan Old Style",Georgia,serif; font-size:15px; line-height:1.5; color:#eef2fb; }
-  #storyPrompt { margin-top:6px; font-size:11px; color:#6b7488; word-break:break-word; }
-  #hint { position: fixed; right: 16px; bottom: 12px; z-index: 8; max-width: 300px;
-    font-size: 12px; color: #56607a; text-align: right; line-height: 1.5; }
+  #heart { display:flex; align-items:center; gap:6px; font-size:13px; color:#9aa5b8; font-variant-numeric:tabular-nums; }
+  #heart .hh { color:#ef4444; font-size:16px; transition:transform .05s; display:inline-block; }
+  a.link, button.link { font-size:13px; color:#e8ecf3; text-decoration:none; border:1px solid #3b82f6; background:#3b82f6; padding:8px 12px; border-radius:10px; cursor:pointer; }
+  a.link:hover, button.link:hover { background:#2f6fe0; }
+  canvas { display: block; position: fixed; inset: 0; z-index: 1; }
+  /* big centered notice when no Control is broadcasting */
+  #wait { position: fixed; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 14px; text-align: center; color: #6b7488; pointer-events: none; }
+  #wait.hide { display: none; }
+  #wait b { color: #aeb8c9; font-size: 20px; font-weight: 600; }
+  #wait span { font-size: 14px; }
 </style>
 </head>
 <body>
   <div id="ui">
-    <button id="connectBtn" class="primary">Connect Muse</button>
-    <button id="simBtn">Simulate</button>
     <div id="modes">
       <button data-mode="flower" class="on">Flower</button>
       <button data-mode="neural">Neural</button>
     </div>
-    <span id="status">Not connected.</span>
+    <span id="status">Waiting for Control…</span>
     <div class="spacer"></div>
-    <div id="heart" title="Heart rate from Muse 2 PPG"><span class="hh">♥</span><span id="bpm">--</span> bpm</div>
-    <span id="live" title="EEG stream"></span>
-    <button id="panelBtn">⚙ Controls</button>
+    <div id="heart" title="Heart rate from Control"><span class="hh">♥</span><span id="bpm">--</span> bpm</div>
+    <button id="presentBtn" class="link">Present ⛶</button>
+    <a class="link" href="./control.html" target="_blank" rel="noopener">Open Control ▸</a>
   </div>
 
   <canvas id="art"></canvas>
-
-  <div id="panel">
-    <h3>Signal → features</h3>
-    <div class="row"><label>Channel</label>
-      <select id="chSel">
-        <option value="avg">Average (all 4)</option>
-        <option value="0">TP9 · left ear</option>
-        <option value="1">AF7 · left brow</option>
-        <option value="2">AF8 · right brow</option>
-        <option value="3">TP10 · right ear</option>
-      </select></div>
-    <div class="row"><label>Smooth</label><input id="smoothSl" type="range" min="0.02" max="0.5" step="0.01" value="0.15"></div>
-    <canvas id="scope" width="272" height="60"></canvas>
-    <div class="feats" id="feats"></div>
-    <div class="sec">
-      <h3>Features → story</h3>
-      <div id="story">…</div>
-      <div id="storyPrompt"></div>
-    </div>
+  <div id="wait">
+    <b>Waiting for the Control window</b>
+    <span>Open Control ▸, click Connect Muse (or Simulate) there — this screen renders it live.</span>
   </div>
-
-  <div id="hint">Put the band on, click Connect, pick your Muse.<br>Open ⚙ Controls to tune and read your story.</div>
 
 <script type="module">
 // ============================================================================
-//  MuseRave — one page, one connection. The ⚙ Controls panel drives THIS
-//  running pipeline live (no second page, no re-connect). Flow:
-//  Muse -> frequency -> features -> (pick features) -> story -> visual.
-//  Chrome/Edge only. Free, no external AI. (SD image = later, needs a GPU.)
+//  MuseRave — VISUALISER. A pure receiver: it does NOT touch the Muse. The
+//  Control window holds the one connection and broadcasts the live features
+//  here over a same-browser channel. Put this on your presentation screen.
 // ============================================================================
-import { MuseClient } from 'https://esm.sh/muse-js';
+const bus = new BroadcastChannel('muserave');
 
-const FS = 256, N = 256, CH = 4;
 const BANDS = { Delta:[1,4], Theta:[4,8], Alpha:[8,13], Beta:[13,30], Gamma:[30,44] };
-const BAND_COLORS = { Delta:'#8b5cf6', Theta:'#3b82f6', Alpha:'#22c55e', Beta:'#f59e0b', Gamma:'#ef4444' };
 const BAND_HUE = { Delta:265, Theta:217, Alpha:142, Beta:38, Gamma:0 };
-
-// live, in-memory controls (set directly by the panel — no localStorage round-trip)
-const ctrl = { avgChannels: true, plotCh: 1, smooth: 0.15 };
-const useBand = { Delta:true, Theta:true, Alpha:true, Beta:true, Gamma:true };  // which feed the story
-
-// ---- ring buffers + DSP ----------------------------------------------------
-const buffers = Array.from({ length: CH }, () => new Float32Array(N));
-let writePos = 0, filled = 0, lastPacket = 0;
-function onReading(r) {
-  if (r.electrode > 3) return;
-  lastPacket = performance.now();
-  for (let i = 0; i < r.samples.length; i++) buffers[r.electrode][(writePos+i)%N] = r.samples[i];
-  if (r.electrode === 3) { writePos = (writePos + r.samples.length) % N; filled = Math.min(N, filled + r.samples.length); }
-}
-function fft(re, im) {
-  const n = re.length;
-  for (let i=1,j=0;i<n;i++){ let bit=n>>1; for(;j&bit;bit>>=1)j^=bit; j^=bit;
-    if(i<j){const tr=re[i];re[i]=re[j];re[j]=tr;const ti=im[i];im[i]=im[j];im[j]=ti;} }
-  for (let len=2;len<=n;len<<=1){ const ang=-2*Math.PI/len,wlRe=Math.cos(ang),wlIm=Math.sin(ang);
-    for(let i=0;i<n;i+=len){ let wRe=1,wIm=0;
-      for(let k=0;k<len/2;k++){ const a=i+k,b=i+k+len/2;
-        const vRe=re[b]*wRe-im[b]*wIm,vIm=re[b]*wIm+im[b]*wRe;
-        re[b]=re[a]-vRe;im[b]=im[a]-vIm;re[a]+=vRe;im[a]+=vIm;
-        const nw=wRe*wlRe-wIm*wlIm;wIm=wRe*wlIm+wIm*wlRe;wRe=nw; } } }
-}
-const hann = new Float32Array(N);
-for (let i=0;i<N;i++) hann[i]=0.5-0.5*Math.cos(2*Math.PI*i/(N-1));
-const spectrum = new Float32Array(N/2);
-function computeBands() {
-  if (filled < N) return null;
-  const chans = ctrl.avgChannels ? [0,1,2,3] : [ctrl.plotCh];
-  const acc = new Float32Array(N/2);
-  for (const c of chans) {
-    const re = new Float32Array(N), im = new Float32Array(N);
-    let mean=0; for (let i=0;i<N;i++) mean+=buffers[c][i]; mean/=N;
-    for (let i=0;i<N;i++) re[i]=(buffers[c][(writePos+i)%N]-mean)*hann[i];
-    fft(re, im);
-    for (let k=0;k<N/2;k++) acc[k]+=re[k]*re[k]+im[k]*im[k];
-  }
-  for (let k=0;k<N/2;k++) spectrum[k]=acc[k]/chans.length;
-  const power={}; for (const name in BANDS){ const [lo,hi]=BANDS[name]; power[name]=0;
-    for (let k=Math.round(lo);k<Math.round(hi);k++) power[name]+=spectrum[k]; }
-  let total=0; for (const k in BANDS) total+=power[k];
-  if (total<=0) return null;
-  const rel={}; for (const k in BANDS) rel[k]=power[k]/total;
-  return rel;
-}
-const bandVals = {}; for (const k in BANDS) bandVals[k]=0;
 const featureVals = {}; for (const k in BANDS) featureVals[k]=0;
-const fMin={}, fMax={}; for (const k in BANDS){ fMin[k]=1; fMax[k]=0; }
-function toFeatures(b){ const out={};
-  for (const k in b){ const v=b[k];
-    if (v<fMin[k]) fMin[k]=v; else fMin[k]+=(v-fMin[k])*0.0015;
-    if (v>fMax[k]) fMax[k]=v; else fMax[k]+=(v-fMax[k])*0.0015;
-    const range=Math.max(1e-6,fMax[k]-fMin[k]); out[k]=Math.min(1,Math.max(0,(v-fMin[k])/range)); }
-  return out; }
-function dominant(f, mask){ return Object.entries(f).filter(([k])=>!mask||mask[k]).sort((a,b)=>b[1]-a[1]); }
+let bpm = 0, pulse = 0, lastRx = -1e9;
 
-// ---- heartbeat (Muse 2 PPG) ------------------------------------------------
-let ppgMean=0, ppgAmp=1, ppgPrev=0, ppgRising=false, lastBeat=0, bpm=0, pulse=0;
-const ibis=[];
-function onPpg(r){
-  if (r.ppgChannel !== 1) return;
-  const now=performance.now();
-  for (const s of r.samples){
-    ppgMean += (s-ppgMean)*0.01; const ac=s-ppgMean; ppgAmp += (Math.abs(ac)-ppgAmp)*0.01;
-    const rising = ac>ppgPrev;
-    if (ppgRising && !rising && ac>ppgAmp*0.6 && now-lastBeat>300){
-      if (lastBeat){ ibis.push(now-lastBeat); if(ibis.length>6) ibis.shift();
-        const s2=[...ibis].sort((a,b)=>a-b); const med=s2[s2.length>>1];
-        if (med>300 && med<1500) bpm=Math.round(60000/med); }
-      lastBeat=now; pulse=1;
-    }
-    ppgRising=rising; ppgPrev=ac;
-  }
-}
+bus.onmessage = (e) => {
+  const m = e.data; if (!m || !m.f) return;
+  for (const k in BANDS) if (typeof m.f[k]==='number') featureVals[k]=m.f[k];
+  bpm = m.bpm || 0;
+  if (m.pulse > pulse) pulse = m.pulse;         // take the beat spike
+  lastRx = performance.now();
+};
+function dominant(f){ return Object.entries(f).sort((a,b)=>b[1]-a[1]); }
 
-// ============================================================================
-//  FEATURES -> STORY. A template names an abstract animal/nature scene from the
-//  strongest of the features you've ticked. Free, in-browser, no training.
-// ============================================================================
-const FORM     = { Delta:'a slow-breathing leviathan', Theta:'a drifting jellyfish', Alpha:'a gliding manta ray', Beta:'a darting flock of starlings', Gamma:'a blazing phoenix' };
-const MATERIAL = { Delta:'deep shadow', Theta:'soft mist', Alpha:'liquid light', Beta:'shards of glass', Gamma:'white fire' };
-const PLACE    = { Delta:'in the abyssal dark', Theta:'over a still sea', Alpha:'in a sunlit grove', Beta:'through a lightning storm', Gamma:'inside a burning sky' };
-const COLOR    = { Delta:'indigo and violet', Theta:'blue and teal', Alpha:'green and gold', Beta:'amber and orange', Gamma:'crimson and white' };
-function buildStory(f) {
-  const d = dominant(f, useBand);
-  if (d.length < 2) return { text:'(tick at least two features)', prompt:'' };
-  const A=d[0][0], B=d[1][0];
-  const text = `${cap(FORM[A])} of ${MATERIAL[B]}, ${PLACE[A]}, ${COLOR[A]}.`;
-  const prompt = `${FORM[A]} made of ${MATERIAL[B]}, ${PLACE[A]}, ${COLOR[A]}, abstract, luminous, highly detailed`;
-  return { text, prompt };
-}
-function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
-
-// ============================================================================
-//  VISUALS
-// ============================================================================
-const canvas = document.getElementById('art');
-const ctx = canvas.getContext('2d');
-function resize(){ canvas.width = innerWidth; canvas.height = innerHeight; }
+// ---- visuals ---------------------------------------------------------------
+const canvas = document.getElementById('art'), ctx = canvas.getContext('2d');
+function resize(){ canvas.width=innerWidth; canvas.height=innerHeight; }
 addEventListener('resize', resize); resize();
 
 let phase = 0;
-function drawFlower(b) {
-  const w=canvas.width, h=canvas.height;
-  ctx.fillStyle='rgba(5,6,10,0.16)'; ctx.fillRect(0,0,w,h);
-  const cx=w/2, cy=h/2; phase += 0.01 + b.Beta*0.08;
-  const breath = 1 + pulse*0.06, rings=5;
-  for (let i=0;i<rings;i++){
-    const t=i/rings, radius=(60+t*220+b.Alpha*260)*breath, hue=(t*120+b.Gamma*200+phase*20)%360;
+function drawFlower(b){
+  const w=canvas.width,h=canvas.height; ctx.fillStyle='rgba(5,6,10,0.16)'; ctx.fillRect(0,0,w,h);
+  const cx=w/2,cy=h/2; phase+=0.01+b.Beta*0.08; const breath=1+pulse*0.06,rings=5;
+  for (let i=0;i<rings;i++){ const t=i/rings, radius=(60+t*220+b.Alpha*260)*breath, hue=(t*120+b.Gamma*200+phase*20)%360;
     ctx.beginPath();
-    for (let a=0;a<=Math.PI*2+0.1;a+=0.1){
-      const wob=Math.sin(a*6+phase*(2+i))*(8+b.Theta*60), rr=radius+wob;
-      const x=cx+Math.cos(a)*rr, y=cy+Math.sin(a)*rr; a===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
-    }
-    ctx.closePath(); ctx.strokeStyle=`hsla(${hue},80%,60%,${0.5-t*0.3})`;
-    ctx.lineWidth=(2+b.Delta*6)*(1+pulse*0.5); ctx.stroke();
-  }
+    for (let a=0;a<=Math.PI*2+0.1;a+=0.1){ const wob=Math.sin(a*6+phase*(2+i))*(8+b.Theta*60), rr=radius+wob;
+      const x=cx+Math.cos(a)*rr,y=cy+Math.sin(a)*rr; a===0?ctx.moveTo(x,y):ctx.lineTo(x,y); }
+    ctx.closePath(); ctx.strokeStyle=`hsla(${hue},80%,60%,${0.5-t*0.3})`; ctx.lineWidth=(2+b.Delta*6)*(1+pulse*0.5); ctx.stroke(); }
 }
 const NODES=64; let neurons=[], edges=[], travels=[];
-function initNeural(){
-  neurons=[]; edges=[]; const w=innerWidth,h=innerHeight;
+function initNeural(){ neurons=[]; edges=[]; const w=innerWidth,h=innerHeight;
   for (let i=0;i<NODES;i++) neurons.push({x:Math.random()*w,y:Math.random()*h,vx:(Math.random()-0.5)*0.15,vy:(Math.random()-0.5)*0.15,charge:Math.random(),lit:0});
   for (let i=0;i<NODES;i++){ const d=neurons.map((n,j)=>({j,r:(n.x-neurons[i].x)**2+(n.y-neurons[i].y)**2})).sort((a,b)=>a.r-b.r);
-    for (let k=1;k<=3;k++) if(d[k]) edges.push([i,d[k].j]); }
-  travels=[];
-}
-function drawNeural(b){
-  const w=canvas.width,h=canvas.height; ctx.fillStyle='rgba(5,6,10,0.22)'; ctx.fillRect(0,0,w,h);
-  if (!neurons.length) initNeural();
-  const hue=BAND_HUE[dominant(featureVals)[0][0]];
+    for (let k=1;k<=3;k++) if(d[k]) edges.push([i,d[k].j]); } travels=[]; }
+function drawNeural(b){ const w=canvas.width,h=canvas.height; ctx.fillStyle='rgba(5,6,10,0.22)'; ctx.fillRect(0,0,w,h);
+  if (!neurons.length) initNeural(); const hue=BAND_HUE[dominant(featureVals)[0][0]];
   const conn=0.12+b.Alpha*0.55+b.Theta*0.3; ctx.lineWidth=1;
-  for (const [i,j] of edges){ const a=neurons[i],c=neurons[j];
-    ctx.strokeStyle=`hsla(${hue},70%,60%,${conn*0.5})`; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(c.x,c.y); ctx.stroke(); }
+  for (const [i,j] of edges){ const a=neurons[i],c=neurons[j]; ctx.strokeStyle=`hsla(${hue},70%,60%,${conn*0.5})`;
+    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(c.x,c.y); ctx.stroke(); }
   const speed=0.015+b.Gamma*0.06+b.Beta*0.03;
-  for (const t of travels){ t.t+=speed; const a=neurons[t.i],c=neurons[t.j];
-    const x=a.x+(c.x-a.x)*t.t, y=a.y+(c.y-a.y)*t.t; ctx.fillStyle=`hsla(${hue},90%,70%,0.9)`;
-    ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.fill(); if(t.t>=1) neurons[t.j].charge+=0.35; }
-  travels=travels.filter(t=>t.t<1);
-  const fire=0.006+b.Beta*0.03+b.Gamma*0.05;
+  for (const t of travels){ t.t+=speed; const a=neurons[t.i],c=neurons[t.j]; const x=a.x+(c.x-a.x)*t.t,y=a.y+(c.y-a.y)*t.t;
+    ctx.fillStyle=`hsla(${hue},90%,70%,0.9)`; ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.fill(); if(t.t>=1) neurons[t.j].charge+=0.35; }
+  travels=travels.filter(t=>t.t<1); const fire=0.006+b.Beta*0.03+b.Gamma*0.05;
   for (let i=0;i<neurons.length;i++){ const n=neurons[i]; n.x+=n.vx; n.y+=n.vy;
     if(n.x<0||n.x>w)n.vx*=-1; if(n.y<0||n.y>h)n.vy*=-1; n.charge+=fire; n.lit*=0.90;
     if(n.charge>=1){ n.charge=0; n.lit=1; for(const [a,c] of edges) if(a===i) travels.push({i:a,j:c,t:0}); }
@@ -250,91 +112,34 @@ function drawNeural(b){
     ctx.beginPath(); ctx.arc(n.x,n.y,r,0,Math.PI*2); ctx.fill(); }
 }
 
-// ============================================================================
-//  PANEL (in-page controls, wired to the live pipeline)
-// ============================================================================
-const panel = document.getElementById('panel');
-document.getElementById('panelBtn').addEventListener('click', () => panel.classList.toggle('open'));
-document.getElementById('chSel').addEventListener('change', e => {
-  if (e.target.value==='avg'){ ctrl.avgChannels=true; } else { ctrl.avgChannels=false; ctrl.plotCh=+e.target.value; }
-});
-document.getElementById('smoothSl').addEventListener('input', e => ctrl.smooth=+e.target.value);
-// feature bars + include checkboxes
-const featsEl = document.getElementById('feats'); const featBar = {};
-for (const k in BANDS){
-  const d=document.createElement('div'); d.className='feat';
-  d.innerHTML=`<div class="barwrap"><div class="bar" id="fb-${k}" style="background:${BAND_COLORS[k]}"></div></div>
-    <label><input type="checkbox" id="uc-${k}" checked>${k[0]}${k[1]}</label>`;
-  featsEl.appendChild(d); featBar[k]=d.querySelector('.bar');
-  d.querySelector('input').addEventListener('change', e => useBand[k]=e.target.checked);
-}
-const scope=document.getElementById('scope'), sctx=scope.getContext('2d');
-const storyEl=document.getElementById('story'), storyPromptEl=document.getElementById('storyPrompt');
-function drawScope(){
-  const w=scope.width,h=scope.height; sctx.clearRect(0,0,w,h);
-  const c=ctrl.avgChannels?1:ctrl.plotCh; let mx=1;
-  for(let i=0;i<N;i++){const a=Math.abs(buffers[c][i]); if(a>mx)mx=a;}
-  sctx.strokeStyle='#60a5fa'; sctx.lineWidth=1; sctx.beginPath();
-  for(let i=0;i<N;i++){const v=buffers[c][(writePos+i)%N]; const x=i/(N-1)*w; const y=h/2-(v/mx)*(h/2*0.9); i===0?sctx.moveTo(x,y):sctx.lineTo(x,y);}
-  sctx.stroke();
-}
-
-// ============================================================================
-//  MODE + MAIN LOOP
-// ============================================================================
+// ---- mode + loop -----------------------------------------------------------
 let mode='flower';
 const modeBox=document.getElementById('modes');
 modeBox.addEventListener('click', e => { const btn=e.target.closest('button'); if(!btn) return;
   mode=btn.dataset.mode; [...modeBox.children].forEach(c=>c.classList.toggle('on',c===btn));
   ctx.fillStyle='#05060a'; ctx.fillRect(0,0,canvas.width,canvas.height); if(mode==='neural') initNeural(); });
 
-const liveDot=document.getElementById('live'), bpmEl=document.getElementById('bpm');
-const heartGlyph=document.querySelector('#heart .hh');
-let lastStory=0;
+const statusEl=document.getElementById('status'), bpmEl=document.getElementById('bpm'), heartGlyph=document.querySelector('#heart .hh');
+const waitEl=document.getElementById('wait');
 function tick(){
-  const rel=computeBands();
-  if (rel){ for (const k in BANDS) bandVals[k]+=(rel[k]-bandVals[k])*ctrl.smooth;
-    const f=toFeatures(bandVals); for (const k in BANDS) featureVals[k]=f[k]; }
+  const rx = performance.now()-lastRx < 1500;
   pulse*=0.90; heartGlyph.style.transform=`scale(${1+pulse*0.5})`;
-
   if (mode==='flower') drawFlower(featureVals); else if (mode==='neural') drawNeural(featureVals);
-
-  if (panel.classList.contains('open')){
-    for (const k in BANDS) featBar[k].style.height=Math.min(100,featureVals[k]*100)+'%';
-    drawScope();
-    if (performance.now()-lastStory>3500){ lastStory=performance.now();
-      const s=buildStory(featureVals); storyEl.textContent=s.text; storyPromptEl.textContent=s.prompt; }
-  }
-
-  const live=lastPacket>0 && performance.now()-lastPacket<600;
-  liveDot.style.background=live?'#22c55e':'#ef4444'; bpmEl.textContent=bpm?bpm:'--';
+  statusEl.textContent = rx ? 'Receiving from Control ✓' : 'Waiting for Control…';
+  statusEl.style.color = rx ? '#22c55e' : '#8b95a8';
+  bpmEl.textContent = bpm?bpm:'--';
+  waitEl.classList.toggle('hide', rx);
   requestAnimationFrame(tick);
 }
 
-// ============================================================================
-//  CONNECTION (one, for the whole page)
-// ============================================================================
-const statusEl=document.getElementById('status'); const setStatus=t=>statusEl.textContent=t;
-document.getElementById('connectBtn').addEventListener('click', async () => {
-  try { setStatus('Opening Bluetooth… pick your Muse.');
-    const client=new MuseClient(); client.enablePpg=true; await client.connect(); await client.start();
-    client.eegReadings.subscribe(onReading); if (client.ppgReadings) client.ppgReadings.subscribe(onPpg);
-    setStatus('Connected. Streaming live.');
-  } catch(e){ setStatus('Connection failed: '+e.message+'  (Chrome/Edge, Bluetooth on.)'); }
-});
-let simTimer=null, simPhi=0, simBeat=0;
-document.getElementById('simBtn').addEventListener('click', () => {
-  if (simTimer){ clearInterval(simTimer); simTimer=null; setStatus('Simulation stopped.'); return; }
-  setStatus('Simulating (no headset).');
-  simTimer=setInterval(() => { simPhi+=0.05; const s=[];
-    for(let i=0;i<12;i++){ const t=simPhi+i/FS;
-      s.push(Math.sin(2*Math.PI*10*t)*(20+15*Math.sin(simPhi/3)) + Math.sin(2*Math.PI*20*t)*8 + (Math.sin(simPhi*7+i)+Math.sin(simPhi*13+i*2))*5); }
-    for(let c=0;c<CH;c++) onReading({electrode:c,samples:s});
-    if (performance.now()-simBeat>60000/64){ simBeat=performance.now(); pulse=1; bpm=62+Math.round(4*Math.sin(simPhi/5)); }
-  }, 47);
+// present mode: fullscreen + hide the top bar
+document.getElementById('presentBtn').addEventListener('click', () => {
+  document.body.classList.toggle('present');
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+  else document.exitFullscreen?.();
 });
 
-window.__muse = { onReading, onPpg, buffers, ctrl, state: () => ({ filled, writePos, lastPacket, bpm }) };
+window.__muse = { bus, state: () => ({ lastRx, bpm, featureVals }) };
 tick();
 </script>
 </body>
