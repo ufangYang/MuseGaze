@@ -419,21 +419,27 @@ document.getElementById('connectBtn').addEventListener('click', async () => {
 });
 
 // Simulation: fake, plausible EEG so you can build the art with no headset.
+let simTimer = null;
+let simPhi = 0;
 document.getElementById('simBtn').addEventListener('click', () => {
+  if (simTimer) { clearInterval(simTimer); simTimer = null; setStatus('Simulation stopped.'); return; }
   setStatus('Simulating fake EEG (no headset).');
-  let phi = 0;
-  setInterval(() => {
-    phi += 0.05;
+  simTimer = setInterval(() => {
+    simPhi += 0.05;
     const samples = [];
     for (let i = 0; i < 12; i++) {
-      const alpha = Math.sin(2 * Math.PI * 10 * (phi + i / FS)) * (20 + 15 * Math.sin(phi / 3));
-      const beta  = Math.sin(2 * Math.PI * 20 * (phi + i / FS)) * 8;
-      const noise = (Math.sin(phi * 7 + i) + Math.sin(phi * 13 + i * 2)) * 5;
+      const t = simPhi + i / FS;
+      const alpha = Math.sin(2 * Math.PI * 10 * t) * (20 + 15 * Math.sin(simPhi / 3));
+      const beta  = Math.sin(2 * Math.PI * 20 * t) * 8;
+      const noise = (Math.sin(simPhi * 7 + i) + Math.sin(simPhi * 13 + i * 2)) * 5;
       samples.push(alpha + beta + noise);
     }
     for (let c = 0; c < CH; c++) onReading({ electrode: c, samples });
-  }, 1000 / (FS / 12));   // ~one packet-set per 12 samples
+  }, 47);   // ~21 packet-sets/sec (12 samples each ≈ 256 Hz)
 });
+
+// debug hook so we can verify ingestion from the console
+window.__muse = { onReading, buffers, state: () => ({ filled, writePos, lastPacket }) };
 
 tick();   // start the render loop immediately (bars sit at 0 until data flows)
 </script>
