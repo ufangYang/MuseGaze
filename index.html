@@ -3,19 +3,16 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>MuseRave — Visualiser</title>
+<title>MuseGaze — Visualiser</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
-  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-    background: #05060a; color: #e8ecf3; overflow: hidden; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #05060a; color: #e8ecf3; overflow: hidden; }
   #ui { position: fixed; top: 0; left: 0; right: 0; z-index: 10; display: flex; align-items: center; gap: 12px;
-    padding: 12px 16px; background: rgba(8,10,16,0.5); backdrop-filter: blur(10px); border-bottom: 1px solid #141824;
-    transition: opacity .4s; }
-  body.present #ui { opacity: 0; pointer-events: none; }   /* fade the bar in present mode */
-  button { font-size: 14px; font-weight: 600; padding: 8px 14px; border-radius: 10px;
-    border: 1px solid #2a3142; background: #141a28; color: #e8ecf3; cursor: pointer; }
+    padding: 12px 16px; background: rgba(8,10,16,0.5); backdrop-filter: blur(10px); border-bottom: 1px solid #141824; transition: opacity .4s; }
+  body.present #ui { opacity: 0; pointer-events: none; }
+  button { font-size: 14px; font-weight: 600; padding: 8px 14px; border-radius: 10px; border: 1px solid #2a3142; background: #141a28; color: #e8ecf3; cursor: pointer; }
   button:hover { background: #1e2740; }
   #modes { display: flex; background: #10131d; border: 1px solid #222a3a; border-radius: 10px; overflow: hidden; }
   #modes button { border: 0; border-radius: 0; background: transparent; padding: 8px 16px; }
@@ -25,11 +22,8 @@
   #heart { display:flex; align-items:center; gap:6px; font-size:13px; color:#9aa5b8; font-variant-numeric:tabular-nums; }
   #heart .hh { color:#ef4444; font-size:16px; transition:transform .05s; display:inline-block; }
   a.link, button.link { font-size:13px; color:#e8ecf3; text-decoration:none; border:1px solid #3b82f6; background:#3b82f6; padding:8px 12px; border-radius:10px; cursor:pointer; }
-  a.link:hover, button.link:hover { background:#2f6fe0; }
   canvas { display: block; position: fixed; inset: 0; z-index: 1; }
-  /* big centered notice when no Control is broadcasting */
-  #wait { position: fixed; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center;
-    flex-direction: column; gap: 14px; text-align: center; color: #6b7488; pointer-events: none; }
+  #wait { position: fixed; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 14px; text-align: center; color: #6b7488; pointer-events: none; }
   #wait.hide { display: none; }
   #wait b { color: #aeb8c9; font-size: 20px; font-weight: 600; }
   #wait span { font-size: 14px; }
@@ -47,7 +41,6 @@
     <button id="presentBtn" class="link">Present ⛶</button>
     <a class="link" href="./control.html" target="_blank" rel="noopener">Open Control ▸</a>
   </div>
-
   <canvas id="art"></canvas>
   <div id="wait">
     <b>Waiting for the Control window</b>
@@ -56,55 +49,49 @@
 
 <script type="module">
 // ============================================================================
-//  MuseRave — VISUALISER. A pure receiver: it does NOT touch the Muse. The
-//  Control window holds the one connection and broadcasts the live features
-//  here over a same-browser channel. Put this on your presentation screen.
+//  MuseGaze — VISUALISER. Pure receiver. Control holds the Muse and broadcasts
+//  the live features (bands + asymmetry + HRV + complexity) over a same-browser
+//  channel. Bands drive the form; frontal alpha ASYMMETRY warms/cools the
+//  palette (approach = warm); the heartbeat breathes it. Put this on the
+//  presentation screen; press Present ⛶ for fullscreen.
 // ============================================================================
-const bus = new BroadcastChannel('muserave');
-
-const BANDS = { Delta:[1,4], Theta:[4,8], Alpha:[8,13], Beta:[13,30], Gamma:[30,44] };
+const bus = new BroadcastChannel('musegaze');
+const BANDS = ['Delta','Theta','Alpha','Beta','Gamma'];
 const BAND_HUE = { Delta:265, Theta:217, Alpha:142, Beta:38, Gamma:0 };
-const featureVals = {}; for (const k in BANDS) featureVals[k]=0;
-let bpm = 0, pulse = 0, lastRx = -1e9;
+const F = { Delta:0,Theta:0,Alpha:0,Beta:0,Gamma:0, FAA:0.5, TB:0.5, HRV:0.5, LZ:0.5 };
+let bpm=0, pulse=0, lastRx=-1e9;
+bus.onmessage = (e) => { const m=e.data; if(!m||!m.f) return;
+  for (const k in m.f) if (typeof m.f[k]==='number') F[k]=m.f[k];
+  bpm=m.bpm||0; if(m.pulse>pulse) pulse=m.pulse; lastRx=performance.now(); };
+function dominant(){ return BANDS.map(k=>[k,F[k]]).sort((a,b)=>b[1]-a[1]); }
 
-bus.onmessage = (e) => {
-  const m = e.data; if (!m || !m.f) return;
-  for (const k in BANDS) if (typeof m.f[k]==='number') featureVals[k]=m.f[k];
-  bpm = m.bpm || 0;
-  if (m.pulse > pulse) pulse = m.pulse;         // take the beat spike
-  lastRx = performance.now();
-};
-function dominant(f){ return Object.entries(f).sort((a,b)=>b[1]-a[1]); }
+const canvas=document.getElementById('art'), ctx=canvas.getContext('2d');
+function resize(){ canvas.width=innerWidth; canvas.height=innerHeight; } addEventListener('resize',resize); resize();
 
-// ---- visuals ---------------------------------------------------------------
-const canvas = document.getElementById('art'), ctx = canvas.getContext('2d');
-function resize(){ canvas.width=innerWidth; canvas.height=innerHeight; }
-addEventListener('resize', resize); resize();
-
-let phase = 0;
-function drawFlower(b){
+let phase=0;
+function warm(){ return (F.FAA-0.5)*70; }        // asymmetry -> hue offset (approach = warmer)
+function drawFlower(){
   const w=canvas.width,h=canvas.height; ctx.fillStyle='rgba(5,6,10,0.16)'; ctx.fillRect(0,0,w,h);
-  const cx=w/2,cy=h/2; phase+=0.01+b.Beta*0.08; const breath=1+pulse*0.06,rings=5;
-  for (let i=0;i<rings;i++){ const t=i/rings, radius=(60+t*220+b.Alpha*260)*breath, hue=(t*120+b.Gamma*200+phase*20)%360;
+  const cx=w/2,cy=h/2; phase+=0.01+F.Beta*0.08; const breath=1+pulse*0.06, rings=5, hoff=warm();
+  for (let i=0;i<rings;i++){ const t=i/rings, radius=(60+t*220+F.Alpha*260)*breath, hue=(t*120+F.Gamma*200+phase*20-hoff+360)%360;
     ctx.beginPath();
-    for (let a=0;a<=Math.PI*2+0.1;a+=0.1){ const wob=Math.sin(a*6+phase*(2+i))*(8+b.Theta*60), rr=radius+wob;
+    for (let a=0;a<=Math.PI*2+0.1;a+=0.1){ const wob=Math.sin(a*6+phase*(2+i))*(8+F.Theta*60), rr=radius+wob;
       const x=cx+Math.cos(a)*rr,y=cy+Math.sin(a)*rr; a===0?ctx.moveTo(x,y):ctx.lineTo(x,y); }
-    ctx.closePath(); ctx.strokeStyle=`hsla(${hue},80%,60%,${0.5-t*0.3})`; ctx.lineWidth=(2+b.Delta*6)*(1+pulse*0.5); ctx.stroke(); }
+    ctx.closePath(); ctx.strokeStyle=`hsla(${hue},80%,60%,${0.5-t*0.3})`; ctx.lineWidth=(2+F.Delta*6)*(1+pulse*0.5); ctx.stroke(); }
 }
 const NODES=64; let neurons=[], edges=[], travels=[];
 function initNeural(){ neurons=[]; edges=[]; const w=innerWidth,h=innerHeight;
   for (let i=0;i<NODES;i++) neurons.push({x:Math.random()*w,y:Math.random()*h,vx:(Math.random()-0.5)*0.15,vy:(Math.random()-0.5)*0.15,charge:Math.random(),lit:0});
   for (let i=0;i<NODES;i++){ const d=neurons.map((n,j)=>({j,r:(n.x-neurons[i].x)**2+(n.y-neurons[i].y)**2})).sort((a,b)=>a.r-b.r);
     for (let k=1;k<=3;k++) if(d[k]) edges.push([i,d[k].j]); } travels=[]; }
-function drawNeural(b){ const w=canvas.width,h=canvas.height; ctx.fillStyle='rgba(5,6,10,0.22)'; ctx.fillRect(0,0,w,h);
-  if (!neurons.length) initNeural(); const hue=BAND_HUE[dominant(featureVals)[0][0]];
-  const conn=0.12+b.Alpha*0.55+b.Theta*0.3; ctx.lineWidth=1;
-  for (const [i,j] of edges){ const a=neurons[i],c=neurons[j]; ctx.strokeStyle=`hsla(${hue},70%,60%,${conn*0.5})`;
-    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(c.x,c.y); ctx.stroke(); }
-  const speed=0.015+b.Gamma*0.06+b.Beta*0.03;
+function drawNeural(){ const w=canvas.width,h=canvas.height; ctx.fillStyle='rgba(5,6,10,0.22)'; ctx.fillRect(0,0,w,h);
+  if(!neurons.length) initNeural(); const hue=(BAND_HUE[dominant()[0][0]]-warm()+360)%360;
+  const conn=0.12+F.Alpha*0.55+F.Theta*0.3; ctx.lineWidth=1;
+  for (const [i,j] of edges){ const a=neurons[i],c=neurons[j]; ctx.strokeStyle=`hsla(${hue},70%,60%,${conn*0.5})`; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(c.x,c.y); ctx.stroke(); }
+  const speed=0.015+F.Gamma*0.06+F.Beta*0.03;
   for (const t of travels){ t.t+=speed; const a=neurons[t.i],c=neurons[t.j]; const x=a.x+(c.x-a.x)*t.t,y=a.y+(c.y-a.y)*t.t;
     ctx.fillStyle=`hsla(${hue},90%,70%,0.9)`; ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.fill(); if(t.t>=1) neurons[t.j].charge+=0.35; }
-  travels=travels.filter(t=>t.t<1); const fire=0.006+b.Beta*0.03+b.Gamma*0.05;
+  travels=travels.filter(t=>t.t<1); const fire=0.006+F.Beta*0.03+F.Gamma*0.05;
   for (let i=0;i<neurons.length;i++){ const n=neurons[i]; n.x+=n.vx; n.y+=n.vy;
     if(n.x<0||n.x>w)n.vx*=-1; if(n.y<0||n.y>h)n.vy*=-1; n.charge+=fire; n.lit*=0.90;
     if(n.charge>=1){ n.charge=0; n.lit=1; for(const [a,c] of edges) if(a===i) travels.push({i:a,j:c,t:0}); }
@@ -112,34 +99,22 @@ function drawNeural(b){ const w=canvas.width,h=canvas.height; ctx.fillStyle='rgb
     ctx.beginPath(); ctx.arc(n.x,n.y,r,0,Math.PI*2); ctx.fill(); }
 }
 
-// ---- mode + loop -----------------------------------------------------------
-let mode='flower';
-const modeBox=document.getElementById('modes');
+let mode='flower'; const modeBox=document.getElementById('modes');
 modeBox.addEventListener('click', e => { const btn=e.target.closest('button'); if(!btn) return;
   mode=btn.dataset.mode; [...modeBox.children].forEach(c=>c.classList.toggle('on',c===btn));
   ctx.fillStyle='#05060a'; ctx.fillRect(0,0,canvas.width,canvas.height); if(mode==='neural') initNeural(); });
 
-const statusEl=document.getElementById('status'), bpmEl=document.getElementById('bpm'), heartGlyph=document.querySelector('#heart .hh');
-const waitEl=document.getElementById('wait');
-function tick(){
-  const rx = performance.now()-lastRx < 1500;
-  pulse*=0.90; heartGlyph.style.transform=`scale(${1+pulse*0.5})`;
-  if (mode==='flower') drawFlower(featureVals); else if (mode==='neural') drawNeural(featureVals);
-  statusEl.textContent = rx ? 'Receiving from Control ✓' : 'Waiting for Control…';
-  statusEl.style.color = rx ? '#22c55e' : '#8b95a8';
-  bpmEl.textContent = bpm?bpm:'--';
-  waitEl.classList.toggle('hide', rx);
-  requestAnimationFrame(tick);
-}
+const statusEl=document.getElementById('status'), bpmEl=document.getElementById('bpm'), heartGlyph=document.querySelector('#heart .hh'), waitEl=document.getElementById('wait');
+function tick(){ const rx=performance.now()-lastRx<1500; pulse*=0.90; heartGlyph.style.transform=`scale(${1+pulse*0.5})`;
+  if(mode==='flower') drawFlower(); else if(mode==='neural') drawNeural();
+  statusEl.textContent = rx?'Receiving from Control ✓':'Waiting for Control…'; statusEl.style.color=rx?'#22c55e':'#8b95a8';
+  bpmEl.textContent=bpm?bpm:'--'; waitEl.classList.toggle('hide',rx); requestAnimationFrame(tick); }
 
-// present mode: fullscreen + hide the top bar
 document.getElementById('presentBtn').addEventListener('click', () => {
   document.body.classList.toggle('present');
-  if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
-  else document.exitFullscreen?.();
-});
+  if(!document.fullscreenElement) document.documentElement.requestFullscreen?.(); else document.exitFullscreen?.(); });
 
-window.__muse = { bus, state: () => ({ lastRx, bpm, featureVals }) };
+window.__muse = { bus, F, state: () => ({ lastRx, bpm }) };
 tick();
 </script>
 </body>
