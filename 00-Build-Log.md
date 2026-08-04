@@ -1,7 +1,7 @@
 ---
 project: MuseRave
 type: build-log
-status: Phase 2 done — features layer live
+status: Phase 3 done — live prompt + EEG verification
 updated: 2026-08-04
 ---
 
@@ -24,7 +24,9 @@ Muse 2 EEG → bands → features → prompt → cheap AI image, shown on screen
 - [x] **Phase 1 — Connect + live bands** (works in `index.html`; Simulate button for no-headset)
 - [x] Phase 1b — Published to GitHub + Pages. Repo: github.com/ufangYang/MuseRave. Live: https://ufangyang.github.io/MuseRave/
 - [x] Phase 2 — Preprocess bands → steady 0–1 features (adaptive normalization + features panel)
-- [ ] Phase 3 — Map features → text prompt  ← current
+- [x] Phase 3 — Map features → live text prompt (buildPrompt: top-2 bands → mood/texture/color). Bottom prompt bar.
+- [x] Verification added — raw EEG scope (auto-scaled, per-channel selectable), LIVE/no-data light (lastPacket), smoothing slider. Left "monitor" panel = the goofi-like plot+params chooser.
+- [ ] Phase 4 — Prompt → cheap AI image on screen  ← current
 - [ ] Phase 2 — Preprocess bands → steady 0–1 features
 - [ ] Phase 3 — Features → text prompt
 - [ ] Phase 4 — Prompt → cheap AI image on screen
@@ -38,6 +40,11 @@ Muse 2 EEG → bands → features → prompt → cheap AI image, shown on screen
 ## What "done" looks like now
 `https://ufangYang.github.io/MuseRave/` opens, Connect pairs the Muse 2, five band bars move, the canvas reacts.
 
+## Known-good notes
+- muse-js MUST be imported from `https://esm.sh/muse-js` (unversioned). A pinned `muse-js@2.0.2` does NOT exist on the CDN and silently kills the whole module (page renders buttons only, no bands). Do not pin a made-up version.
+- Custom domain is live too: www.yufang-yang.com/MuseRave/. After any push, hard-refresh (Cmd+Shift+R) to bypass cache.
+
 ## Change history
+- 2026-08-04 — Fixed blank page: import muse-js from esm.sh instead of a non-existent pinned version. Verified live (5 bands + features panel + art render).
 - 2026-08-04 — Pivoted to browser path (no Terminal). Renamed interface to `index.html`. Rewrote README. Prepared GitHub website-upload steps.
 - 2026-08-04 — (earlier) Scaffolded goofi/terminal Phase 1 — now superseded.

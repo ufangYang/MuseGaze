@@ -87,7 +87,7 @@ let writePos = 0, filled = 0;
 
 // live smoothed band values (relative power 0..1), shared with the art
 const bandVals = {}; for (const k in BANDS) bandVals[k] = 0;
-const SMOOTH = 0.15;            // 0 = frozen, 1 = no smoothing. EDIT HERE.
+let SMOOTH = 0.15;             // 0 = frozen, 1 = no smoothing. Slider adjusts it.
 
 // ---- Phase 2: preprocess bands into steady 0..1 features -------------------
 // Each band is stretched across its own LIVE min..max (adaptive), so a feature
@@ -109,6 +109,22 @@ function toFeatures(bands) {
     out[k] = Math.min(1, Math.max(0, (v - fMin[k]) / range));
   }
   return out;
+}
+
+// ---- Phase 3: turn the strongest bands into a text prompt ------------------
+// The two most-active bands become the mood + texture of an image prompt.
+// EDIT HERE to change the words each brain state produces.
+const PROMPT_WORDS = {
+  Delta: { mood: 'deep and dreamlike',  tex: 'heavy flowing shapes',  col: 'deep indigo and violet' },
+  Theta: { mood: 'calm and drifting',   tex: 'soft misty waves',      col: 'blue and teal' },
+  Alpha: { mood: 'serene and glowing',  tex: 'smooth flowing curves', col: 'green and warm gold' },
+  Beta:  { mood: 'alert and electric',  tex: 'sharp bright lines',    col: 'amber and orange' },
+  Gamma: { mood: 'intense and radiant', tex: 'crystalline bursts',    col: 'vivid red and white' },
+};
+function buildPrompt(features) {
+  const sorted = Object.entries(features).sort((a, b) => b[1] - a[1]);
+  const p = PROMPT_WORDS[sorted[0][0]], s = PROMPT_WORDS[sorted[1][0]];
+  return `a ${p.mood} abstract landscape, ${p.tex} with ${s.tex}, ${p.col}, dreamlike, highly detailed`;
 }
 
 // ---- build the band bars UI ------------------------------------------------
@@ -135,6 +151,81 @@ for (const k in BANDS) {
 document.body.appendChild(featPanel);
 const featEls = {};
 for (const k in BANDS) featEls[k] = document.getElementById(`feat-${k}`);
+
+// ============================================================================
+//  Verification + controls: raw EEG scope, LIVE indicator, plot chooser.
+//  This is the "is it really my brain?" panel — blink and the wave jumps.
+// ============================================================================
+let lastPacket = 0;     // stamped in onReading; drives the LIVE light
+let PLOT_CH = 1;        // which electrode to plot (0=TP9 1=AF7 2=AF8 3=TP10)
+
+const mon = document.createElement('div');
+mon.style.cssText = 'position:fixed;top:64px;left:16px;z-index:10;width:320px;background:rgba(12,14,20,0.72);border:1px solid #1e2330;border-radius:12px;padding:12px;backdrop-filter:blur(6px);font-size:12px;color:#aeb8c9;';
+mon.innerHTML = `
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+    <span id="liveDot" style="width:10px;height:10px;border-radius:50%;background:#ef4444;"></span>
+    <b id="liveText" style="color:#ef4444;">no data yet</b>
+  </div>
+  <div style="margin-bottom:6px;color:#7a8498;">Raw EEG — proof it's you. Blink hard and watch it jump:</div>
+  <canvas id="scope" width="296" height="90" style="width:296px;height:90px;background:#0b0d12;border-radius:8px;display:block;"></canvas>
+  <div style="display:flex;gap:10px;align-items:center;margin-top:10px;">
+    <label style="width:52px;">Plot</label>
+    <select id="chSel" style="flex:1;background:#161b26;color:#e8ecf3;border:1px solid #2a3142;border-radius:6px;padding:3px;">
+      <option value="0">TP9 (left ear)</option>
+      <option value="1" selected>AF7 (left brow)</option>
+      <option value="2">AF8 (right brow)</option>
+      <option value="3">TP10 (right ear)</option>
+    </select>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center;margin-top:8px;">
+    <label style="width:52px;">Smooth</label>
+    <input id="smoothSl" type="range" min="0.02" max="0.5" step="0.01" value="0.15" style="flex:1;">
+  </div>`;
+document.body.appendChild(mon);
+const scope = document.getElementById('scope');
+const sctx = scope.getContext('2d');
+const liveDot = document.getElementById('liveDot');
+const liveText = document.getElementById('liveText');
+document.getElementById('chSel').addEventListener('change', e => PLOT_CH = +e.target.value);
+document.getElementById('smoothSl').addEventListener('input', e => SMOOTH = +e.target.value);
+
+// bottom prompt bar (Phase 3: your bands, written as words)
+const promptBar = document.createElement('div');
+promptBar.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:10;max-width:70vw;background:rgba(12,14,20,0.72);border:1px solid #1e2330;border-radius:10px;padding:8px 16px;font-size:13px;color:#e8ecf3;text-align:center;';
+promptBar.innerHTML = `<span style="color:#7a8498;">prompt from your brain →</span> <span id="promptText">…</span>`;
+document.body.appendChild(promptBar);
+const promptText = document.getElementById('promptText');
+let lastPrompt = 0;
+
+function drawScope() {
+  const w = scope.width, h = scope.height;
+  sctx.clearRect(0, 0, w, h);
+  let mx = 1;                                   // auto-scale so it always fills
+  for (let i = 0; i < N; i++) { const a = Math.abs(buffers[PLOT_CH][i]); if (a > mx) mx = a; }
+  sctx.strokeStyle = '#3b82f6'; sctx.lineWidth = 1;
+  sctx.beginPath();
+  for (let i = 0; i < N; i++) {
+    const v = buffers[PLOT_CH][(writePos + i) % N];
+    const x = i / (N - 1) * w;
+    const y = h / 2 - (v / mx) * (h / 2 * 0.9);
+    i === 0 ? sctx.moveTo(x, y) : sctx.lineTo(x, y);
+  }
+  sctx.stroke();
+}
+
+function updateLive() {
+  const live = lastPacket > 0 && (performance.now() - lastPacket) < 600;
+  liveDot.style.background = live ? '#22c55e' : '#ef4444';
+  liveText.textContent = live ? 'LIVE • EEG streaming' : (lastPacket ? 'signal lost' : 'no data yet');
+  liveText.style.color = live ? '#22c55e' : '#ef4444';
+}
+
+function updatePrompt() {
+  const now = performance.now();
+  if (now - lastPrompt < 1000) return;         // refresh the words ~1x/second
+  lastPrompt = now;
+  promptText.textContent = buildPrompt(featureVals);
+}
 
 // ---- FFT (iterative radix-2 Cooley-Tukey) ----------------------------------
 function fft(re, im) {
@@ -197,6 +288,7 @@ function computeBands() {
 function onReading(r) {
   // r.electrode: 0=TP9 1=AF7 2=AF8 3=TP10 4=AUX ; r.samples: 12 microvolt values
   if (r.electrode > 3) return;
+  lastPacket = performance.now();          // stamp: proves data is arriving
   for (let i = 0; i < r.samples.length; i++) {
     buffers[r.electrode][(writePos + i) % N] = r.samples[i];
   }
@@ -223,6 +315,9 @@ function tick() {
       featEls[k].textContent = Math.round(f[k] * 100);
     }
   }
+  drawScope();            // raw EEG waveform (verification)
+  updateLive();           // LIVE / no-data light
+  updatePrompt();         // Phase 3: bands -> words, ~1x/second
   drawArt(featureVals);   // the art now runs on the preprocessed features
   requestAnimationFrame(tick);
 }
