@@ -23,6 +23,8 @@
   #heart .hh { color:#ef4444; font-size:16px; transition:transform .05s; display:inline-block; }
   a.link, button.link { font-size:13px; color:#e8ecf3; text-decoration:none; border:1px solid #3b82f6; background:#3b82f6; padding:8px 12px; border-radius:10px; cursor:pointer; }
   canvas { display: block; position: fixed; inset: 0; z-index: 1; }
+  .scenelayer { position: fixed; inset: 0; z-index: 1; background-size: cover; background-position: center;
+    opacity: 0; transition: opacity 1.8s ease; will-change: opacity, transform; }
   #wait { position: fixed; inset: 0; z-index: 5; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 14px; text-align: center; color: #6b7488; pointer-events: none; }
   #wait.hide { display: none; }
   #wait b { color: #aeb8c9; font-size: 20px; font-weight: 600; }
@@ -34,6 +36,7 @@
     <div id="modes">
       <button data-mode="flower" class="on">Flower</button>
       <button data-mode="neural">Neural</button>
+      <button data-mode="scenes">Scenes</button>
     </div>
     <span id="status">Waiting for Control…</span>
     <div class="spacer"></div>
@@ -41,6 +44,8 @@
     <button id="presentBtn" class="link">Present ⛶</button>
     <a class="link" href="./control.html" target="_blank" rel="noopener">Open Control ▸</a>
   </div>
+  <div id="scA" class="scenelayer"></div>
+  <div id="scB" class="scenelayer"></div>
   <canvas id="art"></canvas>
   <div id="wait">
     <b>Waiting for the Control window</b>
@@ -105,14 +110,34 @@ function drawNeural(){ const w=canvas.width,h=canvas.height; ctx.fillStyle='rgba
     ctx.beginPath(); ctx.arc(n.x,n.y,r,0,Math.PI*2); ctx.fill(); }
 }
 
+// ---- Scenes mode: pre-made cinematic images; your brain state cross-fades between them.
+//  Pre-generated offline (see gen_scenes.py) -> no live generation, no WiFi during use.
+const SCENES={ odyssey:'./odyssey.png', mobydick:'./mobydick.png', wonderland:'./wonderland.png' };
+for(const k in SCENES){ const im=new Image(); im.src=SCENES[k]; }        // preload + browser-cache
+const scA=document.getElementById('scA'), scB=document.getElementById('scB');
+let scFront=scB, scBack=scA, curScene='', lastSceneT=-1e9;
+function showSceneLayers(on){ scA.style.display=on?'block':'none'; scB.style.display=on?'block':'none'; }
+showSceneLayers(false);
+function sceneFor(){ const d=dominant()[0][0];
+  if(d==='Beta'||d==='Gamma') return 'mobydick';        // alert / intense -> the breaching whale
+  if(d==='Alpha'||d==='Theta') return 'wonderland';     // calm / dreamy  -> the glowing forest
+  return 'odyssey'; }                                   // deep / steady  -> the storm-tossed ship
+function crossfadeTo(name){ scBack.style.backgroundImage=`url("${SCENES[name]}")`;
+  scBack.style.opacity=1; scFront.style.opacity=0; [scFront,scBack]=[scBack,scFront]; curScene=name; }
+
 let mode='flower'; const modeBox=document.getElementById('modes');
 modeBox.addEventListener('click', e => { const btn=e.target.closest('button'); if(!btn) return;
   mode=btn.dataset.mode; [...modeBox.children].forEach(c=>c.classList.toggle('on',c===btn));
-  ctx.fillStyle='#05060a'; ctx.fillRect(0,0,canvas.width,canvas.height); if(mode==='neural') initNeural(); });
+  ctx.fillStyle='#05060a'; ctx.fillRect(0,0,canvas.width,canvas.height); if(mode==='neural') initNeural();
+  const sc=(mode==='scenes'); showSceneLayers(sc); canvas.style.display=sc?'none':'block'; if(sc) lastSceneT=-1e9; });
 
 const statusEl=document.getElementById('status'), bpmEl=document.getElementById('bpm'), heartGlyph=document.querySelector('#heart .hh'), waitEl=document.getElementById('wait');
 function tick(){ const rx=performance.now()-lastRx<1500; pulse*=0.90; heartGlyph.style.transform=`scale(${1+pulse*0.5})`;
-  if(mode==='flower') drawFlower(); else if(mode==='neural') drawNeural();
+  if(mode==='flower') drawFlower();
+  else if(mode==='neural') drawNeural();
+  else if(mode==='scenes'){ const now=performance.now();
+    if(now-lastSceneT>4500){ const s=sceneFor(); if(s!==curScene) crossfadeTo(s); lastSceneT=now; }
+    scFront.style.transform=`scale(${1.04+pulse*0.03})`; }
   statusEl.textContent = rx?'Receiving from Control ✓':'Waiting for Control…'; statusEl.style.color=rx?'#22c55e':'#8b95a8';
   bpmEl.textContent=bpm?bpm:'--'; waitEl.classList.toggle('hide',rx); requestAnimationFrame(tick); }
 

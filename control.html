@@ -289,7 +289,6 @@ function tick(){
   bpmEl.textContent=bpm?bpm:'--';
   if(now-lastStoryT>3500){ lastStoryT=now; refreshText(); if(sdUrl.value.trim()) tryGenerate(); }
   drawWires();
-  bus.postMessage({ f:F, bpm, pulse, live, base:baseMean, map:route, story:curStory });
   requestAnimationFrame(tick);
 }
 
@@ -306,6 +305,12 @@ document.getElementById('simBtn').addEventListener('click',()=>{ if(simTimer){cl
     onReading({electrode:c,samples:s}); }
     if(performance.now()-simBeat>60000/64){ simBeat=performance.now(); pulse=1; const ibi=60000/(62+4*Math.sin(simPhi/5)); ibisAll.push(ibi); if(ibisAll.length>20)ibisAll.shift(); bpm=Math.round(60000/ibi); }
   },47); });
+
+// Broadcast on a timer, NOT inside requestAnimationFrame: setInterval keeps
+// firing even when the Control window is in the background, so the Visualiser
+// on the other screen never loses the feed. (rAF pauses when a window is hidden.)
+setInterval(()=>{ bus.postMessage({ f:F, bpm, pulse,
+  live: lastPacket>0 && performance.now()-lastPacket<600, map:route, story:curStory, base:baseMean }); }, 100);
 
 window.__muse={ onReading,onPpg,ctrl,F,state:()=>({filled,writePos,lastPacket,bpm}) };
 addEventListener('resize',drawWires);
