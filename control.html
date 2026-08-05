@@ -309,8 +309,11 @@ document.getElementById('calBtn').addEventListener('click',()=>{ calibrating=tru
 const F={}; let lastLZ=0,lastLZt=0,lastConn=[[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]],lastCt=0,lastSpecT=0,lastStoryT=0,lastPcaT=0;
 function tick(){
   const r=computeAll();
-  if(r){ for(const k in BANDS) bandVals[k]+=(r.rel[k]-bandVals[k])*ctrl.smooth; const bf=toFeatures(bandVals);
-    for(const k in BANDS) F[k]=bf[k]; F.FAA=norm('FAA',r.FAA); F.TB=norm('TB',r.thetaBeta);
+  if(r){ for(const k in BANDS) bandVals[k]+=(r.rel[k]-bandVals[k])*ctrl.smooth;
+    // RESPONSIVE bands: fixed gain on the smoothed relative power (NOT self-calibrated), so a
+    // real change like eyes-closed alpha actually shows and holds instead of adapting away.
+    for(const k in BANDS) F[k]=Math.min(1, bandVals[k]*2.4);
+    F.FAA=norm('FAA',r.FAA); F.TB=norm('TB',r.thetaBeta);
     pcaBuf.push([r.rel.Delta,r.rel.Theta,r.rel.Alpha,r.rel.Beta,r.rel.Gamma]); if(pcaBuf.length>160) pcaBuf.shift(); }
   const now=performance.now();
   if(now-lastLZt>1000&&filled>=N){ lastLZt=now; lastLZ=computeLZ(); }
