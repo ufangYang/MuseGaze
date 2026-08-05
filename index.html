@@ -44,7 +44,7 @@
   <div id="ui">
     <div id="modes">
       <button data-mode="bloom" class="on">Bloom</button>
-      <button data-mode="aurora">Aurora</button>
+      <button data-mode="plasma">Plasma</button>
       <button data-mode="spectrum">Spectrum</button>
       <button data-mode="scenes">Scenes</button>
     </div>
@@ -154,32 +154,35 @@ function drawBloom(breath){
   alphaBloom(breath);                                  // eyes-closed → the flower also lights the room
 }
 
-// ---- AURORA: flowing northern-lights ribbons. Soft luminous light sheets that
-//  undulate across the screen, one per brain band (its power sets the ribbon's
-//  height + brightness). Structured and always lit — not a formless wash.
-let auroraT=0;
-function initAurora(){ /* ribbons are procedural — no particles to seed */ }
-const AUR_RIBS=[ {hue:165,b:'Alpha'},{hue:195,b:'Theta'},{hue:225,b:'Beta'},{hue:280,b:'Delta'},{hue:330,b:'Alpha'} ];
-function drawAurora(breath){
+// ---- PLASMA: liquid-ink metaballs. Soft glowing blobs drift on organic paths and
+//  merge like ink dropped in water; Alpha swells them, Beta quickens the flow, FAA
+//  warms the palette. A faint trailing smear leaves inky wakes.
+let plasmaBlobs=[], plasmaT=0;
+const PLASMA_HUES=[275,240,205,175,150,40,320,190];
+function initPlasma(){ plasmaBlobs=[];
+  for(let i=0;i<8;i++) plasmaBlobs.push({
+    sx:0.28+0.13*((i*0.7)%1), sy:0.24+0.11*((i*0.53)%1),
+    ax:0.32+0.14*((i*0.37)%1), ay:0.32+0.14*((i*0.61)%1),
+    px:i*0.9, py:i*1.7+1, hue:PLASMA_HUES[i%PLASMA_HUES.length] }); }
+function initAurora(){ initPlasma(); }                 // (resize hook keeps the old name)
+function drawPlasma(breath){
   const w=canvas.width,h=canvas.height;
-  ctx.globalCompositeOperation='source-over'; ctx.fillStyle='#04050c'; ctx.fillRect(0,0,w,h);
-  auroraT += 0.004 + F.Beta*0.01;
+  if(!plasmaBlobs.length) initPlasma();
+  ctx.globalCompositeOperation='source-over'; ctx.fillStyle='rgba(3,3,8,0.20)'; ctx.fillRect(0,0,w,h);  // dark water + inky trail
+  plasmaT += 0.006 + F.Beta*0.022;
   ctx.globalCompositeOperation='lighter';
-  for(let r=0;r<AUR_RIBS.length;r++){
-    const R=AUR_RIBS[r], bv=F[R.b]||0, hue=(R.hue-warm()+360)%360;
-    const yc=h*(0.26+0.13*r), th=h*(0.05+bv*0.17)*(0.9+breath*0.22), A=0.10+bv*0.16;
-    const f1=0.0015+r*0.0003, f2=0.0034, p1=auroraT*(0.6+r*0.15), p2=-auroraT*0.5, drift=Math.sin(breath*Math.PI*2)*h*0.02;
-    const center=x=> yc + Math.sin(x*f1+p1)*h*0.10 + Math.sin(x*f2+p2)*h*0.05 + drift;
-    ctx.beginPath();
-    for(let x=0;x<=w;x+=14){ const y=center(x)-th/2; x===0?ctx.moveTo(x,y):ctx.lineTo(x,y); }
-    for(let x=w;x>=0;x-=14){ const y=center(x)+th/2; ctx.lineTo(x,y); }
-    ctx.closePath();
-    ctx.shadowColor=`hsla(${hue},92%,62%,${A})`; ctx.shadowBlur=46;         // soft luminous glow
-    ctx.fillStyle=`hsla(${hue},86%,56%,${A})`; ctx.fill();
-    ctx.shadowBlur=0;
-  }
-  ctx.globalCompositeOperation='source-over';
-  alphaBloom(breath);
+  const R=Math.max(w,h);
+  for(let i=0;i<plasmaBlobs.length;i++){ const b=plasmaBlobs[i];
+    const x=w*(0.5 + b.ax*Math.sin(plasmaT*b.sx + b.px));
+    const y=h*(0.5 + b.ay*Math.sin(plasmaT*b.sy + b.py));
+    const rad=R*(0.14+F.Alpha*0.14+0.05*Math.sin(plasmaT*1.3+i))*(0.82+breath*0.3);
+    const hue=(b.hue - warm()+360)%360, inten=0.075+F.Alpha*0.06;      // dim so blobs read as ink, not white light
+    const rg=ctx.createRadialGradient(x,y,0,x,y,rad);
+    rg.addColorStop(0,`hsla(${hue},95%,58%,${inten})`);
+    rg.addColorStop(0.45,`hsla(${hue},88%,48%,${inten*0.45})`);
+    rg.addColorStop(1,`hsla(${hue},85%,42%,0)`);
+    ctx.fillStyle=rg; ctx.beginPath(); ctx.arc(x,y,rad,0,Math.PI*2); ctx.fill(); }
+  ctx.globalCompositeOperation='source-over';                          // no green bloom here — plasma is its own alpha response
 }
 
 // ---- SPECTRUM: the live 3–45 Hz spectrum as a FILLED rainbow corona (color = the
@@ -237,7 +240,7 @@ let mode='bloom'; const modeBox=document.getElementById('modes');
 modeBox.addEventListener('click', e => { const btn=e.target.closest('button'); if(!btn) return;
   mode=btn.dataset.mode; [...modeBox.children].forEach(c=>c.classList.toggle('on',c===btn));
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  if(mode==='aurora') initAurora();
+  if(mode==='plasma') initPlasma();
   const sc=(mode==='scenes'); showSceneLayers(sc); if(sc) lastSceneT=-1e9; });
 
 const statusEl=document.getElementById('status'), bpmEl=document.getElementById('bpm'),
@@ -245,7 +248,7 @@ const statusEl=document.getElementById('status'), bpmEl=document.getElementById(
       alphaFill=document.getElementById('alphaFill'), eyesEl=document.getElementById('eyes'),
       captionEl=document.getElementById('caption');
 const CAPTION={ bloom:'Close your eyes — alpha opens the bloom',
-  aurora:'Bands paint the field · Beta stirs it · breath swells it',
+  plasma:'Liquid ink · Alpha swells it · Beta quickens the flow',
   spectrum:'Your live 3–45 Hz spectrum · color = frequency · green ring = alpha',
   scenes:'The scene follows your brain state' };
 
@@ -258,10 +261,13 @@ function tick(){
   pulse*=0.90; heartGlyph.style.transform=`scale(${1+(breath-0.5)*0.5})`;
   const w=canvas.width,h=canvas.height;
   if(mode==='bloom') drawBloom(breath);
-  else if(mode==='aurora') drawAurora(breath);
+  else if(mode==='plasma') drawPlasma(breath);
   else if(mode==='spectrum') drawSpectrum2(breath);
   else if(mode==='scenes'){ const now=performance.now();
-    if(now-lastSceneT>4500){ const s=sceneFor(); if(s!==curScene) crossfadeTo(s); lastSceneT=now; }
+    if(now-lastSceneT>8000){ const keys=Object.keys(SCENES); const s=sceneFor();
+      if(s!==curScene) crossfadeTo(s);                   // brain state changed → show its scene
+      else crossfadeTo(keys[(keys.indexOf(curScene)+1)%keys.length]);   // else rotate so it always moves
+      lastSceneT=now; }
     scFront.style.transform='scale(1.03)';               // static — no drifting zoom
     ctx.clearRect(0,0,w,h); alphaBloom(breath); }
   const aPct=Math.min(100,alphaSmooth*140);
