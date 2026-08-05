@@ -91,48 +91,47 @@ function drawFlower(){
     ctx.closePath(); ctx.strokeStyle=`hsla(${hue},80%,${60+glow*25}%,${Math.min(0.9,(0.5-t*0.3)*(1+glow*0.7))})`;
     ctx.lineWidth=(2+F.Delta*6)*(1+pulse*0.5); ctx.stroke(); }
 }
-const NODES=80; let neurons=[], edges=[], travels=[], bokeh=[], neuralT=0;
+// Neural — modelled on a real neuron micrograph: a cool blue-white palette (NOT rainbow),
+// fine flowing dendrites, luminous white-blue somas, soft depth, and only a few warm sparks.
+const NODES=82; let neurons=[], edges=[], travels=[], bokeh=[], neuralT=0;
 function initNeural(){ neurons=[]; edges=[]; bokeh=[]; const w=innerWidth,h=innerHeight;
   for (let i=0;i<NODES;i++) neurons.push({x:Math.random()*w,y:Math.random()*h,
-    vx:(Math.random()-0.5)*0.16,vy:(Math.random()-0.5)*0.16,charge:Math.random(),lit:0,
-    hue: 170 + Math.random()*160});                         // each cell its own cyan→violet→magenta hue
+    vx:(Math.random()-0.5)*0.13,vy:(Math.random()-0.5)*0.13,charge:Math.random(),lit:0,
+    hue: Math.random()<0.82 ? 196+Math.random()*24 : 236+Math.random()*24});   // mostly cyan-blue, a few violet
   for (let i=0;i<NODES;i++){ const d=neurons.map((n,j)=>({j,r:(n.x-neurons[i].x)**2+(n.y-neurons[i].y)**2})).sort((a,b)=>a.r-b.r);
-    for (let k=1;k<=4;k++) if(d[k]) edges.push([i,d[k].j]); }        // ~4 dendrites each → denser web
-  for (let i=0;i<34;i++) bokeh.push({x:Math.random()*w,y:Math.random()*h,r:16+Math.random()*95,
-    hue:170+Math.random()*160,a:0.02+Math.random()*0.055,dx:(Math.random()-0.5)*0.12,dy:(Math.random()-0.5)*0.12});
+    for (let k=1;k<=4;k++) if(d[k]) edges.push([i,d[k].j]); }
+  for (let i=0;i<30;i++) bokeh.push({x:Math.random()*w,y:Math.random()*h,r:22+Math.random()*110,
+    hue:200+Math.random()*26,a:0.015+Math.random()*0.045,dx:(Math.random()-0.5)*0.09,dy:(Math.random()-0.5)*0.09});
   travels=[]; }
-function drawNeural(){ const w=canvas.width,h=canvas.height; ctx.fillStyle='rgba(3,5,12,0.20)'; ctx.fillRect(0,0,w,h);
-  if(!neurons.length) initNeural(); neuralT+=0.01+F.Beta*0.02;
-  ctx.globalCompositeOperation='lighter';                   // additive glow, like neurons under a scope
-  const ws=warm();
-  for (const b of bokeh){ b.x+=b.dx; b.y+=b.dy;             // out-of-focus depth particles
+function drawNeural(){ const w=canvas.width,h=canvas.height; ctx.fillStyle='rgba(2,4,10,0.22)'; ctx.fillRect(0,0,w,h);
+  if(!neurons.length) initNeural(); neuralT+=0.008+F.Beta*0.02;
+  ctx.globalCompositeOperation='lighter';
+  for (const b of bokeh){ b.x+=b.dx; b.y+=b.dy;                    // soft out-of-focus depth, blue
     if(b.x<-b.r)b.x=w+b.r; if(b.x>w+b.r)b.x=-b.r; if(b.y<-b.r)b.y=h+b.r; if(b.y>h+b.r)b.y=-b.r;
-    const hh=(b.hue-ws+360)%360, rg=ctx.createRadialGradient(b.x,b.y,0,b.x,b.y,b.r);
-    rg.addColorStop(0,`hsla(${hh},90%,66%,${b.a})`); rg.addColorStop(1,`hsla(${hh},90%,66%,0)`);
+    const rg=ctx.createRadialGradient(b.x,b.y,0,b.x,b.y,b.r);
+    rg.addColorStop(0,`hsla(${b.hue},80%,60%,${b.a})`); rg.addColorStop(1,`hsla(${b.hue},80%,60%,0)`);
     ctx.fillStyle=rg; ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill(); }
-  const conn=0.12+F.Alpha*0.5+F.Theta*0.3;
-  for (const [i,j] of edges){ const a=neurons[i],c=neurons[j];   // curved tapering dendrites
-    const mx=(a.x+c.x)/2,my=(a.y+c.y)/2, nx=-(c.y-a.y),ny=(c.x-a.x), L=Math.hypot(nx,ny)||1, off=Math.sin(neuralT*1.3+i*0.7)*22;
-    const cpx=mx+nx/L*off, cpy=my+ny/L*off, g=ctx.createLinearGradient(a.x,a.y,c.x,c.y);
-    g.addColorStop(0,`hsla(${(a.hue-ws+360)%360},85%,62%,${conn*0.5})`);
-    g.addColorStop(1,`hsla(${(c.hue-ws+360)%360},85%,62%,${conn*0.5})`);
-    ctx.strokeStyle=g; ctx.lineWidth=1.3+F.Beta*1.6; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.quadraticCurveTo(cpx,cpy,c.x,c.y); ctx.stroke(); }
-  const speed=0.015+F.Gamma*0.06+F.Beta*0.03;
-  for (const t of travels){ t.t+=speed; const a=neurons[t.i],c=neurons[t.j];   // sparks ride the curve
-    const mx=(a.x+c.x)/2,my=(a.y+c.y)/2, nx=-(c.y-a.y),ny=(c.x-a.x), L=Math.hypot(nx,ny)||1, off=Math.sin(neuralT*1.3+t.i*0.7)*22, cpx=mx+nx/L*off, cpy=my+ny/L*off;
+  const conn=0.09+F.Alpha*0.4+F.Theta*0.22;
+  for (const [i,j] of edges){ const a=neurons[i],c=neurons[j];    // fine flowing dendrites
+    const mx=(a.x+c.x)/2,my=(a.y+c.y)/2, nx=-(c.y-a.y),ny=(c.x-a.x), L=Math.hypot(nx,ny)||1, off=Math.sin(neuralT*1.2+i*0.6)*26;
+    ctx.strokeStyle=`hsla(${a.hue},72%,74%,${conn})`; ctx.lineWidth=0.6+F.Beta*0.8;
+    ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.quadraticCurveTo(mx+nx/L*off,my+ny/L*off,c.x,c.y); ctx.stroke(); }
+  const speed=0.014+F.Gamma*0.05+F.Beta*0.03;
+  for (const t of travels){ t.t+=speed; const a=neurons[t.i],c=neurons[t.j];   // sparse warm sparks ride the curve
+    const mx=(a.x+c.x)/2,my=(a.y+c.y)/2, nx=-(c.y-a.y),ny=(c.x-a.x), L=Math.hypot(nx,ny)||1, off=Math.sin(neuralT*1.2+t.i*0.6)*26, cpx=mx+nx/L*off, cpy=my+ny/L*off;
     const u=1-t.t, x=u*u*a.x+2*u*t.t*cpx+t.t*t.t*c.x, y=u*u*a.y+2*u*t.t*cpy+t.t*t.t*c.y;
-    ctx.fillStyle='hsla(40,100%,72%,0.95)'; ctx.beginPath(); ctx.arc(x,y,2.4+F.Gamma*3,0,Math.PI*2); ctx.fill();
-    if(t.t>=1) neurons[t.j].charge+=0.35; }
-  travels=travels.filter(t=>t.t<1); const fire=0.006+F.Beta*0.03+F.Gamma*0.05;
+    ctx.fillStyle='hsla(38,95%,66%,0.8)'; ctx.beginPath(); ctx.arc(x,y,1.6+F.Gamma*2,0,Math.PI*2); ctx.fill();
+    if(t.t>=1) neurons[t.j].charge+=0.3; }
+  travels=travels.filter(t=>t.t<1); const fire=0.004+F.Beta*0.02+F.Gamma*0.04;
   for (let i=0;i<neurons.length;i++){ const n=neurons[i]; n.x+=n.vx; n.y+=n.vy;
-    if(n.x<0||n.x>w)n.vx*=-1; if(n.y<0||n.y>h)n.vy*=-1; n.charge+=fire; n.lit*=0.90;
-    if(n.charge>=1){ n.charge=0; n.lit=1; for(const [a,c] of edges) if(a===i) travels.push({i:a,j:c,t:0}); }
-    const r=(3+n.lit*11)*(1+pulse*0.5), hh=(n.hue-ws+360)%360;
-    const rg=ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,r*2.4);   // soft glowing soma with bright core
-    rg.addColorStop(0,`hsla(${hh},100%,${74+n.lit*22}%,${0.7+n.lit*0.3})`);
-    rg.addColorStop(0.5,`hsla(${hh},95%,60%,${0.16+n.lit*0.3})`);
-    rg.addColorStop(1,`hsla(${hh},90%,50%,0)`);
-    ctx.fillStyle=rg; ctx.beginPath(); ctx.arc(n.x,n.y,r*2.4,0,Math.PI*2); ctx.fill(); }
+    if(n.x<0||n.x>w)n.vx*=-1; if(n.y<0||n.y>h)n.vy*=-1; n.charge+=fire; n.lit*=0.92;
+    if(n.charge>=1){ n.charge=0; n.lit=1; let k=0; for(const [a,c] of edges){ if(a===i && k<2){ travels.push({i:a,j:c,t:0}); k++; } } }
+    const r=(3.5+n.lit*9)*(1+pulse*0.4), hh=n.hue;
+    const rg=ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,r*2.6);   // luminous white-blue soma
+    rg.addColorStop(0,`hsla(${hh},55%,${88+n.lit*10}%,${0.5+n.lit*0.4})`);
+    rg.addColorStop(0.4,`hsla(${hh},85%,66%,${0.12+n.lit*0.25})`);
+    rg.addColorStop(1,`hsla(${hh},85%,55%,0)`);
+    ctx.fillStyle=rg; ctx.beginPath(); ctx.arc(n.x,n.y,r*2.6,0,Math.PI*2); ctx.fill(); }
   ctx.globalCompositeOperation='source-over';
 }
 
