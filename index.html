@@ -126,13 +126,14 @@ function drawBloom(breath){
   const w=canvas.width,h=canvas.height; ctx.fillStyle='rgba(6,7,13,0.16)'; ctx.fillRect(0,0,w,h);
   const cx=w/2,cy=h/2, R=Math.min(w,h);
   const petals=6, layers=2;
-  const disc=R*(0.11+F.Alpha*0.17);                    // petal radius; alpha clearly swells it
-  const spread=disc*(0.5+breath*0.95)*(0.85+F.Alpha*0.6);  // breath OPENS the flower; alpha widens it
+  const aEff=Math.min(1, alphaSmooth*1.8);             // display gain: the bloom opens with modest alpha
+  const disc=R*(0.12+aEff*0.14);                       // petal radius
+  const spread=disc*(0.72+breath*0.7)*(0.85+aEff*0.7);  // open at rest, opens further with alpha
   const hueC=(196 - warm() + 360)%360;                 // teal base, FAA warms it
   bloomRot += 0.0015 + F.Beta*0.018;
   ctx.globalCompositeOperation='lighter';
   for(let L=0;L<layers;L++){
-    const orb=spread*(1-L*0.26), rr=disc*(1-L*0.14), A=(0.07+F.Alpha*0.07+F.HRV*0.03)*(1-L*0.30);
+    const orb=spread*(1-L*0.26), rr=disc*(1-L*0.14), A=(0.08+aEff*0.06+F.HRV*0.03)*(1-L*0.30);
     for(let i=0;i<petals;i++){
       const a=bloomRot*(L%2?-1:1)+i/petals*Math.PI*2 + L*0.5;
       const px=cx+Math.cos(a)*orb, py=cy+Math.sin(a)*orb;
@@ -184,14 +185,16 @@ function drawAurora(breath){
 // ---- SPECTRUM: the live 3–45 Hz spectrum as a FILLED rainbow corona (color = the
 //  frequency it came from), tip lights, and a soft core — fills the frame, no thin
 //  spokes, no gaps. Sub-3 Hz drift is dropped upstream in Control, so no giant spikes.
+let specSpin=0;
 function drawSpectrum2(breath){
   const w=canvas.width,h=canvas.height; ctx.fillStyle='rgba(4,6,14,0.16)'; ctx.fillRect(0,0,w,h);
   const cx=w/2,cy=h/2, S=specDisp, R=Math.min(w,h), N=200, brS=0.94+breath*0.12;
-  const base=(R*0.13*brS)+F.Alpha*R*0.10, amp=R*0.42;
+  specSpin += 0.003 + F.Beta*0.012;                    // slow rotation so it's alive even on steady input
+  const base=(R*0.13*brS)+F.Alpha*R*0.10, amp=R*0.40*(0.8+breath*0.4);   // amplitude breathes
   const pts=[];
   for(let a=0;a<=N;a++){ const fk=3+a/N*41, k=Math.floor(fk), frac=fk-k;
     const raw=(S[k]||0)*(1-frac)+(S[k+1]||0)*frac, v=Math.pow(raw,0.68);   // gamma lift: reveal weak bins
-    const ang=a/N*Math.PI*2 - Math.PI/2, hue=(280-(fk-3)/41*280+360)%360;  // violet→red across frequency
+    const ang=a/N*Math.PI*2 - Math.PI/2 + specSpin, hue=(280-(fk-3)/41*280 + specSpin*40 +360)%360;  // rotating rainbow
     pts.push({ang,r1:base+v*amp,hue,v}); }
   // soft central disc so the middle is never an empty hole
   const core=ctx.createRadialGradient(cx,cy,0,cx,cy,base*1.1);
@@ -259,11 +262,11 @@ function tick(){
   else if(mode==='spectrum') drawSpectrum2(breath);
   else if(mode==='scenes'){ const now=performance.now();
     if(now-lastSceneT>4500){ const s=sceneFor(); if(s!==curScene) crossfadeTo(s); lastSceneT=now; }
-    scFront.style.transform=`scale(${1.04+(breath-0.5)*0.05})`;
+    scFront.style.transform='scale(1.03)';               // static — no drifting zoom
     ctx.clearRect(0,0,w,h); alphaBloom(breath); }
   const aPct=Math.min(100,alphaSmooth*140);
   alphaFill.style.width=aPct+'%';
-  const closed=alphaSmooth>0.42;
+  const closed=alphaSmooth>0.32;
   eyesEl.textContent=closed?'eyes closed':'eyes open'; eyesEl.classList.toggle('closed',closed);
   captionEl.textContent=rx?(CAPTION[mode]||''):''; captionEl.classList.toggle('force',closed);
   statusEl.textContent = rx?('Receiving ✓ · '+curState):'Waiting for Control…'; statusEl.style.color=rx?'#22c55e':'#8b95a8';
