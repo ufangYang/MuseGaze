@@ -361,8 +361,15 @@ document.getElementById('simBtn').addEventListener('click',()=>{ if(simTimer){cl
 // Broadcast on a timer, NOT inside requestAnimationFrame: setInterval keeps
 // firing even when the Control window is in the background, so the Visualiser
 // on the other screen never loses the feed. (rAF pauses when a window is hidden.)
-setInterval(()=>{ let sMax=1e-9; for(let k=1;k<49;k++) if(specSmooth[k]>sMax) sMax=specSmooth[k];
-  const specOut=new Array(49); for(let k=0;k<49;k++) specOut[k]=Math.min(1,(specSmooth[k]||0)/sMax);
+let specAGC=1e-6;
+setInterval(()=>{
+  // Display spectrum: DROP sub-3 Hz (dry-Muse drift/DC/movement dominate there and would
+  // otherwise pin the scale), then divide by a SLOW-ADAPTING max (fast attack, ~5 s release)
+  // so the picture holds a stable scale instead of rescaling — and flickering — every 100 ms.
+  let cur=1e-9; for(let k=3;k<=45;k++) if(specSmooth[k]>cur) cur=specSmooth[k];
+  specAGC=Math.max(specAGC*0.98, cur, 1e-6);
+  const specOut=new Array(49).fill(0);
+  for(let k=3;k<=45;k++) specOut[k]=Math.min(1,(specSmooth[k]||0)/specAGC);
   bus.postMessage({ f:F, bpm, pulse, state:curState, spec:specOut,
   live: lastPacket>0 && performance.now()-lastPacket<600, map:route, story:curStory, base:baseMean }); }, 100);
 // silent keep-alive tone so the OS/browser doesn't heavily throttle this window's timers when it's
