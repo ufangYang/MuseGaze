@@ -60,24 +60,30 @@ const BANDS = ['Delta','Theta','Alpha','Beta','Gamma'];
 const BAND_HUE = { Delta:265, Theta:217, Alpha:142, Beta:38, Gamma:0 };
 const F = { Delta:0,Theta:0,Alpha:0,Beta:0,Gamma:0, FAA:0.5, TB:0.5, HRV:0.5, LZ:0.5 };
 let bpm=0, pulse=0, lastRx=-1e9;
+// routing: which feature drives each knob (set on Control, sent here). Defaults match the old hardwiring.
+let route={ size:'Alpha', speed:'Beta', ripple:'Theta', warmth:'FAA', glow:'HRV' };
 bus.onmessage = (e) => { const m=e.data; if(!m||!m.f) return;
   for (const k in m.f) if (typeof m.f[k]==='number') F[k]=m.f[k];
+  if (m.map) route=m.map;
   bpm=m.bpm||0; if(m.pulse>pulse) pulse=m.pulse; lastRx=performance.now(); };
 function dominant(){ return BANDS.map(k=>[k,F[k]]).sort((a,b)=>b[1]-a[1]); }
+function kv(name){ const k=route[name]; return (k&&k!=='none')?(F[k]||0):0; }   // knob value from its wired feature
 
 const canvas=document.getElementById('art'), ctx=canvas.getContext('2d');
 function resize(){ canvas.width=innerWidth; canvas.height=innerHeight; } addEventListener('resize',resize); resize();
 
 let phase=0;
-function warm(){ return (F.FAA-0.5)*70; }        // asymmetry -> hue offset (approach = warmer)
+function warm(){ return (kv('warmth')-0.5)*70; }  // the feature wired to Warmth shifts the hue
 function drawFlower(){
   const w=canvas.width,h=canvas.height; ctx.fillStyle='rgba(5,6,10,0.16)'; ctx.fillRect(0,0,w,h);
-  const cx=w/2,cy=h/2; phase+=0.01+F.Beta*0.08; const breath=1+pulse*0.06, rings=5, hoff=warm();
-  for (let i=0;i<rings;i++){ const t=i/rings, radius=(60+t*220+F.Alpha*260)*breath, hue=(t*120+F.Gamma*200+phase*20-hoff+360)%360;
+  const size=kv('size'), speed=kv('speed'), ripple=kv('ripple'), glow=kv('glow');
+  const cx=w/2,cy=h/2; phase+=0.01+speed*0.08; const breath=1+pulse*0.06, rings=5, hoff=warm();
+  for (let i=0;i<rings;i++){ const t=i/rings, radius=(60+t*220+size*260)*breath, hue=(t*120+F.Gamma*200+phase*20-hoff+360)%360;
     ctx.beginPath();
-    for (let a=0;a<=Math.PI*2+0.1;a+=0.1){ const wob=Math.sin(a*6+phase*(2+i))*(8+F.Theta*60), rr=radius+wob;
+    for (let a=0;a<=Math.PI*2+0.1;a+=0.1){ const wob=Math.sin(a*6+phase*(2+i))*(8+ripple*60), rr=radius+wob;
       const x=cx+Math.cos(a)*rr,y=cy+Math.sin(a)*rr; a===0?ctx.moveTo(x,y):ctx.lineTo(x,y); }
-    ctx.closePath(); ctx.strokeStyle=`hsla(${hue},80%,60%,${0.5-t*0.3})`; ctx.lineWidth=(2+F.Delta*6)*(1+pulse*0.5); ctx.stroke(); }
+    ctx.closePath(); ctx.strokeStyle=`hsla(${hue},80%,${60+glow*25}%,${Math.min(0.9,(0.5-t*0.3)*(1+glow*0.7))})`;
+    ctx.lineWidth=(2+F.Delta*6)*(1+pulse*0.5); ctx.stroke(); }
 }
 const NODES=64; let neurons=[], edges=[], travels=[];
 function initNeural(){ neurons=[]; edges=[]; const w=innerWidth,h=innerHeight;

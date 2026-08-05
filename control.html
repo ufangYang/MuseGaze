@@ -39,6 +39,9 @@
   table.ft { width:100%; border-collapse:collapse; font-size:11px; }
   table.ft td { padding:2px 4px; } table.ft .v { text-align:right; font-variant-numeric:tabular-nums; color:#e8ecf3; }
   table.ft .d { text-align:right; font-size:10px; }
+  .node .rr { display:flex; align-items:center; gap:6px; margin-top:3px; font-size:11px; }
+  .node .rr span { width:50px; color:#7f8aa0; }
+  .node .rr select { flex:1; font-size:10px; padding:2px; }
 </style>
 </head>
 <body>
@@ -186,10 +189,23 @@ mkNode('spec','Spectrogram','#e879f9',500,300,['s'],[],
   `<canvas id="cSpec" width="188" height="90"></canvas><div style="margin-top:4px;color:#7f8aa0;">frequency over time</div>`);
 mkNode('feat','Features','#ef4444',740,300,['f'],['o'],
   `<table class="ft" id="ftab"></table>`);
-mkNode('out','▶ Visualiser','#22c55e',980,300,['o'],[],
+mkNode('out','▶ Visualiser','#22c55e',980,300,['o'],['o'],
   `<div id="outDom">—</div><div style="margin-top:4px;color:#22c55e;">broadcasting live</div>`);
+mkNode('route','Routing · feature → knob','#22d3ee',980,70,['f'],['o'],
+  `<div style="font-size:10px;color:#7f8aa0;margin-bottom:4px;">pick what drives each knob (or —)</div>
+   <div class="rr"><span>Bloom</span><select id="rt-size"></select></div>
+   <div class="rr"><span>Speed</span><select id="rt-speed"></select></div>
+   <div class="rr"><span>Ripple</span><select id="rt-ripple"></select></div>
+   <div class="rr"><span>Warmth</span><select id="rt-warmth"></select></div>
+   <div class="rr"><span>Glow</span><select id="rt-glow"></select></div>`);
+mkNode('story','Story · text','#f472b6',500,470,['o'],['t'],
+  `<div id="storyText" style="font-family:Georgia,serif;font-size:12px;color:#eef2fb;line-height:1.45;min-height:34px;">…</div>`);
+mkNode('image','Image · text → picture','#fb7185',760,470,['t'],[],
+  `<div id="imgPrompt" style="font-size:10px;color:#7f8aa0;line-height:1.35;min-height:26px;"></div>
+   <div id="imgWrap" style="margin-top:5px;width:180px;height:110px;background:#0a0d14;border-radius:6px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:10px;color:#5b647a;padding:6px;overflow:hidden;">image → needs local Stable Diffusion (a GPU)</div>
+   <input id="sdUrl" placeholder="local SD endpoint (optional)" style="width:180px;margin-top:5px;background:#161b26;color:#e8ecf3;border:1px solid #2a3142;border-radius:5px;padding:4px;font-size:10px;">`);
 wire('muse','chan'); wire('chan','psd'); wire('psd','power'); wire('power','feat'); wire('feat','out');
-wire('chan','conn'); wire('chan','spec');
+wire('chan','conn'); wire('chan','spec'); wire('feat','route'); wire('route','out'); wire('out','story'); wire('story','image');
 
 // body wiring
 document.getElementById('chSel').addEventListener('change',e=>{ if(e.target.value==='avg'){ctrl.avgChannels=true;} else {ctrl.avgChannels=false;ctrl.plotCh=+e.target.value;} });
@@ -203,6 +219,23 @@ const ftab=document.getElementById('ftab'), ftV={}, ftD={};
 for(const [k,nm] of DER){ const tr=document.createElement('tr');
   tr.innerHTML=`<td style="color:#7f8aa0">${nm}</td><td class="v" id="fv-${k}">–</td><td class="d" id="fd-${k}"></td>`;
   ftab.appendChild(tr); ftV[k]=tr.querySelector('.v'); ftD[k]=tr.querySelector('.d'); }
+// routing: choose which feature drives each visual knob (or — to disconnect)
+const FEAT_OPTS=[['none','—'],['Delta','Delta'],['Theta','Theta'],['Alpha','Alpha'],['Beta','Beta'],['Gamma','Gamma'],['FAA','Asymmetry'],['TB','Focus'],['HRV','Calm'],['LZ','Richness']];
+const route={ size:'Alpha', speed:'Beta', ripple:'Theta', warmth:'FAA', glow:'HRV' };
+for(const knob of ['size','speed','ripple','warmth','glow']){ const sel=document.getElementById('rt-'+knob);
+  sel.innerHTML=FEAT_OPTS.map(([v,l])=>`<option value="${v}">${l}</option>`).join(''); sel.value=route[knob];
+  sel.addEventListener('change',e=>route[knob]=e.target.value); }
+// story (text) + image (text -> picture; real when a local Stable Diffusion URL is given)
+const storyText=document.getElementById('storyText');
+const imgPrompt=document.getElementById('imgPrompt'), imgWrap=document.getElementById('imgWrap'), sdUrl=document.getElementById('sdUrl');
+let curStory='', curPrompt=''; let lastGen=0;
+function refreshText(){ curStory=buildStory(F); curPrompt=`${curStory} abstract, luminous, painterly, highly detailed`;
+  storyText.textContent=curStory; imgPrompt.textContent='prompt → '+curPrompt; }
+function tryGenerate(){ const url=sdUrl.value.trim(); if(!url) return; if(performance.now()-lastGen<9000) return; lastGen=performance.now();
+  imgWrap.textContent='generating…';
+  fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:curPrompt,steps:8,width:384,height:384})})
+    .then(r=>r.json()).then(d=>{ const b=(d.images&&d.images[0])||d.image; if(b){ imgWrap.innerHTML=`<img src="data:image/png;base64,${b}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;">`; } else imgWrap.textContent='no image field in response'; })
+    .catch(()=>{ imgWrap.textContent='can’t reach local SD (an https page can’t call http://localhost — run MuseGaze locally to use your GPU)'; }); }
 const cRaw=document.getElementById('cRaw').getContext('2d');
 const cPsd=document.getElementById('cPsd').getContext('2d');
 const cConn=document.getElementById('cConn').getContext('2d');
@@ -232,7 +265,7 @@ let calibrating=false,calStart=0,calAcc={},calCount=0; const baseMean={};
 const calNote=document.getElementById('calNote');
 document.getElementById('calBtn').addEventListener('click',()=>{ calibrating=true; calStart=performance.now(); calAcc={}; calCount=0; calNote.textContent='calibrating… neutral eyes-open rest'; });
 
-const F={}; let lastLZ=0,lastLZt=0,lastConn=[[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]],lastCt=0,lastSpecT=0;
+const F={}; let lastLZ=0,lastLZt=0,lastConn=[[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]],lastCt=0,lastSpecT=0,lastStoryT=0;
 function tick(){
   const r=computeAll();
   if(r){ for(const k in BANDS) bandVals[k]+=(r.rel[k]-bandVals[k])*ctrl.smooth; const bf=toFeatures(bandVals);
@@ -254,8 +287,9 @@ function tick(){
   const dm=dominant(F,useBand); if(dm.length) outDom.innerHTML=`<b style="color:${BAND_COLORS[dm[0][0]]}">${dm[0][0]}</b> ${Math.round((dm[0][1]||0)*100)}`;
   const live=lastPacket>0&&now-lastPacket<600; museState.textContent=live?'streaming ✓':(lastPacket?'signal lost':'idle'); museState.style.color=live?'#22c55e':'#7f8aa0';
   bpmEl.textContent=bpm?bpm:'--';
+  if(now-lastStoryT>3500){ lastStoryT=now; refreshText(); if(sdUrl.value.trim()) tryGenerate(); }
   drawWires();
-  bus.postMessage({ f:F, bpm, pulse, live, base:baseMean });
+  bus.postMessage({ f:F, bpm, pulse, live, base:baseMean, map:route, story:curStory });
   requestAnimationFrame(tick);
 }
 
