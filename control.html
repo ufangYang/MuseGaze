@@ -147,6 +147,21 @@ const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
 function buildStory(f){ const d=dominant(f,useBand); if(d.length<2)return '(tick two bands)'; const A=d[0][0],B=d[1][0];
   return `${cap(FORM[A])} of ${MAT[B]}, ${PLACE[A]}, ${COL[A]}.`; }
 
+// real-time brain-STATE classifier — a transparent scored rule set on the self-scaled features
+// (not trained ML; goofi's Classifier is ML — this is the honest browser version). The state
+// drives the Visualiser's scene and is broadcast so anything can key off it.
+function classifyState(){
+  const s = {
+    Relaxed: (F.Alpha||0)*1.0 + (F.HRV||0)*0.4,
+    Focused: (F.Beta||0)*0.9 + (1-(F.TB||0))*0.5,
+    Drowsy:  (F.Theta||0)*0.9 + (F.Delta||0)*0.6,
+    Excited: (F.Gamma||0)*0.8 + (F.Beta||0)*0.4 + (bpm>92?0.3:0),
+    Neutral: 0.5,
+  };
+  let best='Neutral',bv=-1; for(const k in s) if(s[k]>bv){bv=s[k];best=k;} return best;
+}
+let curState='Neutral', stateHold='Neutral', stateSince=0;   // 1.2 s hysteresis, set in tick
+
 // ============================================================================
 //  NODE CANVAS
 // ============================================================================
@@ -190,7 +205,7 @@ mkNode('spec','Spectrogram','#e879f9',500,300,['s'],[],
 mkNode('feat','Features','#ef4444',740,300,['f'],['o'],
   `<table class="ft" id="ftab"></table>`);
 mkNode('out','▶ Visualiser','#22c55e',980,300,['o'],['o'],
-  `<div id="outDom">—</div><div style="margin-top:4px;color:#22c55e;">broadcasting live</div>`);
+  `<div id="outDom">—</div><div id="stateLabel" style="margin-top:4px;font-size:14px;font-weight:700;color:#e8ecf3;">state: —</div><div style="margin-top:3px;color:#22c55e;font-size:11px;">broadcasting live</div>`);
 mkNode('route','Routing · feature → knob','#22d3ee',980,70,['f'],['o'],
   `<div style="font-size:10px;color:#7f8aa0;margin-bottom:4px;">pick what drives each knob (or —)</div>
    <div class="rr"><span>Bloom</span><select id="rt-size"></select></div>
@@ -240,7 +255,7 @@ const cRaw=document.getElementById('cRaw').getContext('2d');
 const cPsd=document.getElementById('cPsd').getContext('2d');
 const cConn=document.getElementById('cConn').getContext('2d');
 const specCanvas=document.getElementById('cSpec'), cSpec=specCanvas.getContext('2d');
-const museState=document.getElementById('museState'), outDom=document.getElementById('outDom');
+const museState=document.getElementById('museState'), outDom=document.getElementById('outDom'), stateLabelEl=document.getElementById('stateLabel');
 const bpmEl=document.getElementById('bpm'), heartGlyph=document.querySelector('#heart .hh');
 
 function drawRaw(){ const w=188,h=86; cRaw.clearRect(0,0,w,h);
@@ -285,6 +300,9 @@ function tick(){
   for(const [k] of DER){ const v=F[k]||0; ftV[k].textContent=Math.round(v*100);
     if(baseMean[k]!==undefined){ const d=Math.round((v-baseMean[k])*100); ftD[k].textContent=(d>=0?'+':'')+d; ftD[k].style.color=d>=0?'#22c55e':'#ef4444'; } }
   const dm=dominant(F,useBand); if(dm.length) outDom.innerHTML=`<b style="color:${BAND_COLORS[dm[0][0]]}">${dm[0][0]}</b> ${Math.round((dm[0][1]||0)*100)}`;
+  const cand=classifyState();                        // classify + 1.2s hysteresis so it doesn't flicker
+  if(cand!==stateHold){ stateHold=cand; stateSince=now; } else if(now-stateSince>1200) curState=cand;
+  stateLabelEl.textContent='state: '+curState;
   const live=lastPacket>0&&now-lastPacket<600; museState.textContent=live?'streaming ✓':(lastPacket?'signal lost':'idle'); museState.style.color=live?'#22c55e':'#7f8aa0';
   bpmEl.textContent=bpm?bpm:'--';
   if(now-lastStoryT>3500){ lastStoryT=now; refreshText(); if(sdUrl.value.trim()) tryGenerate(); }
@@ -294,11 +312,13 @@ function tick(){
 
 const statusEl=document.getElementById('status'); const setStatus=t=>statusEl.textContent=t;
 document.getElementById('connectBtn').addEventListener('click',async()=>{
+  keepAlive();
   try{ setStatus('Opening Bluetooth… pick your Muse.'); const client=new MuseClient(); client.enablePpg=true; await client.connect(); await client.start();
     client.eegReadings.subscribe(onReading); if(client.ppgReadings) client.ppgReadings.subscribe(onPpg); setStatus('Connected. Driving the Visualiser.');
   }catch(e){ setStatus('Connection failed: '+e.message); } });
 let simTimer=null,simPhi=0,simBeat=0;
 document.getElementById('simBtn').addEventListener('click',()=>{ if(simTimer){clearInterval(simTimer);simTimer=null;setStatus('Simulation stopped.');return;}
+  keepAlive();
   setStatus('Simulating — driving the Visualiser.');
   simTimer=setInterval(()=>{ simPhi+=0.05; for(let c=0;c<CH;c++){ const s=[];
     for(let i=0;i<12;i++){ const t=simPhi+i/FS; s.push(Math.sin(2*Math.PI*10*t)*(20+15*Math.sin(simPhi/3))*(c<2?1:0.7)+Math.sin(2*Math.PI*20*t)*8+(Math.sin(simPhi*7+i+c)+Math.random()-0.5)*6); }
@@ -309,8 +329,13 @@ document.getElementById('simBtn').addEventListener('click',()=>{ if(simTimer){cl
 // Broadcast on a timer, NOT inside requestAnimationFrame: setInterval keeps
 // firing even when the Control window is in the background, so the Visualiser
 // on the other screen never loses the feed. (rAF pauses when a window is hidden.)
-setInterval(()=>{ bus.postMessage({ f:F, bpm, pulse,
+setInterval(()=>{ bus.postMessage({ f:F, bpm, pulse, state:curState,
   live: lastPacket>0 && performance.now()-lastPacket<600, map:route, story:curStory, base:baseMean }); }, 100);
+// silent keep-alive tone so the OS/browser doesn't heavily throttle this window's timers when it's
+// in the background — keeps the broadcast flowing to the Visualiser on the other screen.
+let keptAlive=false;
+function keepAlive(){ if(keptAlive) return; try { const ac=new (window.AudioContext||window.webkitAudioContext)();
+  const o=ac.createOscillator(), g=ac.createGain(); g.gain.value=0.00001; o.connect(g); g.connect(ac.destination); o.start(); keptAlive=true; } catch(e){} }
 
 window.__muse={ onReading,onPpg,ctrl,F,state:()=>({filled,writePos,lastPacket,bpm}) };
 addEventListener('resize',drawWires);
