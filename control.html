@@ -203,7 +203,7 @@ mkNode('story','Story · text','#f472b6',500,470,['o'],['t'],
 mkNode('image','Image · text → picture','#fb7185',760,470,['t'],[],
   `<div id="imgPrompt" style="font-size:10px;color:#7f8aa0;line-height:1.35;min-height:26px;"></div>
    <div id="imgWrap" style="margin-top:5px;width:180px;height:110px;background:#0a0d14;border-radius:6px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:10px;color:#5b647a;padding:6px;overflow:hidden;">image → needs local Stable Diffusion (a GPU)</div>
-   <input id="sdUrl" placeholder="local SD endpoint (optional)" style="width:180px;margin-top:5px;background:#161b26;color:#e8ecf3;border:1px solid #2a3142;border-radius:5px;padding:4px;font-size:10px;">`);
+   <input id="sdUrl" placeholder="image endpoint URL (Cloudflare Worker or local SD)" style="width:180px;margin-top:5px;background:#161b26;color:#e8ecf3;border:1px solid #2a3142;border-radius:5px;padding:4px;font-size:10px;">`);
 wire('muse','chan'); wire('chan','psd'); wire('psd','power'); wire('power','feat'); wire('feat','out');
 wire('chan','conn'); wire('chan','spec'); wire('feat','route'); wire('route','out'); wire('out','story'); wire('story','image');
 
@@ -234,7 +234,7 @@ function refreshText(){ curStory=buildStory(F); curPrompt=`${curStory} abstract,
 function tryGenerate(){ const url=sdUrl.value.trim(); if(!url) return; if(performance.now()-lastGen<9000) return; lastGen=performance.now();
   imgWrap.textContent='generating…';
   fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:curPrompt,steps:8,width:384,height:384})})
-    .then(r=>r.json()).then(d=>{ const b=(d.images&&d.images[0])||d.image; if(b){ imgWrap.innerHTML=`<img src="data:image/png;base64,${b}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;">`; } else imgWrap.textContent='no image field in response'; })
+    .then(r=>r.json()).then(d=>{ const b=(d.images&&d.images[0])||d.image; if(b){ const src=b.startsWith('data:')?b:('data:image/jpeg;base64,'+b); imgWrap.innerHTML=`<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:6px;">`; } else imgWrap.textContent=(d.error||'no image field in response'); })
     .catch(()=>{ imgWrap.textContent='can’t reach local SD (an https page can’t call http://localhost — run MuseGaze locally to use your GPU)'; }); }
 const cRaw=document.getElementById('cRaw').getContext('2d');
 const cPsd=document.getElementById('cPsd').getContext('2d');
