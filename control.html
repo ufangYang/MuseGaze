@@ -113,6 +113,25 @@ function lz76(s){ let i=0,c=1,l=1,k=1,km=1,n=s.length; if(!n)return 0;
 function computeLZ(){ const c=ctrl.avgChannels?1:ctrl.plotCh; const arr=[]; for(let i=0;i<N;i++)arr.push(buffers[c][i]);
   const sd=[...arr].sort((a,b)=>a-b); const md=sd[N>>1]; return lz76(arr.map(v=>v>md?1:0)); }
 function rmssd(ib){ if(ib.length<3)return 0; let s=0,n=0; for(let i=1;i<ib.length;i++){const d=ib[i]-ib[i-1];s+=d*d;n++;} return Math.sqrt(s/n); }
+// ---- PCA of the 5-band vector over a sliding window (streaming, power-iteration) ----
+const pcaBuf=[]; const pcaHist=[];
+function computePCA(){ const B=pcaBuf, n=B.length; if(n<12) return [0,0];
+  const D=5, mean=new Array(D).fill(0);
+  for(const v of B) for(let d=0;d<D;d++) mean[d]+=v[d]; for(let d=0;d<D;d++) mean[d]/=n;
+  const cov=Array.from({length:D},()=>new Array(D).fill(0));
+  for(const v of B){ for(let a=0;a<D;a++){ const ca=v[a]-mean[a]; for(let b=0;b<D;b++) cov[a][b]+=ca*(v[b]-mean[b]); } }
+  for(let a=0;a<D;a++) for(let b=0;b<D;b++) cov[a][b]/=n;
+  const mul=(M,x)=>M.map(row=>row.reduce((s,m,k)=>s+m*x[k],0));
+  const nrm=x=>{ const m=Math.hypot(...x)||1; return x.map(v=>v/m); };
+  const dot=(a,b)=>a.reduce((s,v,k)=>s+v*b[k],0);
+  let e1=nrm([1,0.6,0.3,0.2,0.1]); for(let i=0;i<40;i++) e1=nrm(mul(cov,e1));
+  const l1=dot(e1,mul(cov,e1)), cov2=cov.map((r,a)=>r.map((x,b)=>x-l1*e1[a]*e1[b]));
+  let e2=nrm([0.1,0.2,0.3,0.6,1]); for(let i=0;i<40;i++) e2=nrm(mul(cov2,e2));
+  const last=B[B.length-1].map((x,d)=>x-mean[d]);
+  return [dot(last,e1), dot(last,e2)];
+}
+function specEntropy(){ let sum=0; for(let k=1;k<=45;k++) sum+=specSmooth[k]; if(sum<=0) return 0;
+  let se=0; for(let k=1;k<=45;k++){ const p=specSmooth[k]/sum; if(p>0) se-=p*Math.log2(p); } return se/Math.log2(45); }
 function connMatrix(){ // 4x4 broadband Pearson correlation over the window
   const m=[[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]]; const means=[0,0,0,0];
   for(let c=0;c<CH;c++){ let s=0; for(let i=0;i<N;i++) s+=buffers[c][i]; means[c]=s/N; }
@@ -219,8 +238,10 @@ mkNode('image','Image · text → picture','#fb7185',760,470,['t'],[],
   `<div id="imgPrompt" style="font-size:10px;color:#7f8aa0;line-height:1.35;min-height:26px;"></div>
    <div id="imgWrap" style="margin-top:5px;width:180px;height:110px;background:#0a0d14;border-radius:6px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:10px;color:#5b647a;padding:6px;overflow:hidden;">image → needs local Stable Diffusion (a GPU)</div>
    <input id="sdUrl" placeholder="image endpoint URL (Cloudflare Worker or local SD)" style="width:180px;margin-top:5px;background:#161b26;color:#e8ecf3;border:1px solid #2a3142;border-radius:5px;padding:4px;font-size:10px;">`);
+mkNode('pca','PCA · state space','#14b8a6',30,470,['f'],['f'],
+  `<canvas id="cPca" width="120" height="120"></canvas><div style="margin-top:4px;color:#7f8aa0;">PC1 × PC2 of the bands</div>`);
 wire('muse','chan'); wire('chan','psd'); wire('psd','power'); wire('power','feat'); wire('feat','out');
-wire('chan','conn'); wire('chan','spec'); wire('feat','route'); wire('route','out'); wire('out','story'); wire('story','image');
+wire('chan','conn'); wire('chan','spec'); wire('feat','route'); wire('route','out'); wire('out','story'); wire('story','image'); wire('feat','pca');
 
 // body wiring
 document.getElementById('chSel').addEventListener('change',e=>{ if(e.target.value==='avg'){ctrl.avgChannels=true;} else {ctrl.avgChannels=false;ctrl.plotCh=+e.target.value;} });
@@ -229,13 +250,13 @@ const barsEl=document.getElementById('bars'), barEl={};
 for(const k in BANDS){ const d=document.createElement('div'); d.className='bcell';
   d.innerHTML=`<div class="bwrap"><div class="b" id="bb-${k}" style="background:${BAND_COLORS[k]}"></div></div><label><input type="checkbox" id="uc-${k}" checked>${k[0]}${k[1]}</label>`;
   barsEl.appendChild(d); barEl[k]=d.querySelector('.b'); d.querySelector('input').addEventListener('change',e=>useBand[k]=e.target.checked); }
-const DER=[['FAA','Asym'],['TB','Focus'],['HRV','Calm'],['LZ','Rich']];
+const DER=[['FAA','Asym'],['TB','Focus'],['HRV','Calm'],['LZ','Rich'],['SE','Entropy']];
 const ftab=document.getElementById('ftab'), ftV={}, ftD={};
 for(const [k,nm] of DER){ const tr=document.createElement('tr');
   tr.innerHTML=`<td style="color:#7f8aa0">${nm}</td><td class="v" id="fv-${k}">–</td><td class="d" id="fd-${k}"></td>`;
   ftab.appendChild(tr); ftV[k]=tr.querySelector('.v'); ftD[k]=tr.querySelector('.d'); }
 // routing: choose which feature drives each visual knob (or — to disconnect)
-const FEAT_OPTS=[['none','—'],['Delta','Delta'],['Theta','Theta'],['Alpha','Alpha'],['Beta','Beta'],['Gamma','Gamma'],['FAA','Asymmetry'],['TB','Focus'],['HRV','Calm'],['LZ','Richness']];
+const FEAT_OPTS=[['none','—'],['Delta','Delta'],['Theta','Theta'],['Alpha','Alpha'],['Beta','Beta'],['Gamma','Gamma'],['FAA','Asymmetry'],['TB','Focus'],['HRV','Calm'],['LZ','Richness'],['PC1','PCA-1'],['PC2','PCA-2'],['SE','Entropy']];
 const route={ size:'Alpha', speed:'Beta', ripple:'Theta', warmth:'FAA', glow:'HRV' };
 for(const knob of ['size','speed','ripple','warmth','glow']){ const sel=document.getElementById('rt-'+knob);
   sel.innerHTML=FEAT_OPTS.map(([v,l])=>`<option value="${v}">${l}</option>`).join(''); sel.value=route[knob];
@@ -255,6 +276,11 @@ const cRaw=document.getElementById('cRaw').getContext('2d');
 const cPsd=document.getElementById('cPsd').getContext('2d');
 const cConn=document.getElementById('cConn').getContext('2d');
 const specCanvas=document.getElementById('cSpec'), cSpec=specCanvas.getContext('2d');
+const cPca=document.getElementById('cPca').getContext('2d');
+function drawPca(){ const s=120; cPca.clearRect(0,0,s,s);
+  cPca.strokeStyle='#1c2333'; cPca.lineWidth=1; cPca.beginPath(); cPca.moveTo(s/2,0); cPca.lineTo(s/2,s); cPca.moveTo(0,s/2); cPca.lineTo(s,s/2); cPca.stroke();
+  for(let i=0;i<pcaHist.length;i++){ const p=pcaHist[i], al=(i+1)/pcaHist.length;
+    cPca.fillStyle=`hsla(175,85%,62%,${0.12+al*0.85})`; cPca.beginPath(); cPca.arc(p[0]*s,p[1]*s,1.6+al*2.4,0,Math.PI*2); cPca.fill(); } }
 const museState=document.getElementById('museState'), outDom=document.getElementById('outDom'), stateLabelEl=document.getElementById('stateLabel');
 const bpmEl=document.getElementById('bpm'), heartGlyph=document.querySelector('#heart .hh');
 
@@ -280,21 +306,24 @@ let calibrating=false,calStart=0,calAcc={},calCount=0; const baseMean={};
 const calNote=document.getElementById('calNote');
 document.getElementById('calBtn').addEventListener('click',()=>{ calibrating=true; calStart=performance.now(); calAcc={}; calCount=0; calNote.textContent='calibrating… neutral eyes-open rest'; });
 
-const F={}; let lastLZ=0,lastLZt=0,lastConn=[[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]],lastCt=0,lastSpecT=0,lastStoryT=0;
+const F={}; let lastLZ=0,lastLZt=0,lastConn=[[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]],lastCt=0,lastSpecT=0,lastStoryT=0,lastPcaT=0;
 function tick(){
   const r=computeAll();
   if(r){ for(const k in BANDS) bandVals[k]+=(r.rel[k]-bandVals[k])*ctrl.smooth; const bf=toFeatures(bandVals);
-    for(const k in BANDS) F[k]=bf[k]; F.FAA=norm('FAA',r.FAA); F.TB=norm('TB',r.thetaBeta); }
+    for(const k in BANDS) F[k]=bf[k]; F.FAA=norm('FAA',r.FAA); F.TB=norm('TB',r.thetaBeta);
+    pcaBuf.push([r.rel.Delta,r.rel.Theta,r.rel.Alpha,r.rel.Beta,r.rel.Gamma]); if(pcaBuf.length>160) pcaBuf.shift(); }
   const now=performance.now();
   if(now-lastLZt>1000&&filled>=N){ lastLZt=now; lastLZ=computeLZ(); }
   if(now-lastCt>250&&filled>=N){ lastCt=now; lastConn=connMatrix(); }
-  F.LZ=norm('LZ',lastLZ); F.HRV=norm('HRV',rmssd(ibisAll));
+  F.LZ=norm('LZ',lastLZ); F.HRV=norm('HRV',rmssd(ibisAll)); F.SE=norm('SE',specEntropy());
+  if(now-lastPcaT>300 && filled>=N){ lastPcaT=now; const pc=computePCA();
+    F.PC1=norm('PC1',pc[0]); F.PC2=norm('PC2',pc[1]); pcaHist.push([F.PC1,F.PC2]); if(pcaHist.length>60) pcaHist.shift(); }
   pulse*=0.90; heartGlyph.style.transform=`scale(${1+pulse*0.5})`;
 
   if(calibrating){ for(const k in F) calAcc[k]=(calAcc[k]||0)+F[k]; calCount++;
     if(now-calStart>40000){ calibrating=false; for(const k in calAcc) baseMean[k]=calAcc[k]/calCount; calNote.textContent='baseline set ✓'; } }
 
-  drawRaw(); drawPsd(); drawConn(lastConn);
+  drawRaw(); drawPsd(); drawConn(lastConn); drawPca();
   if(now-lastSpecT>120){ lastSpecT=now; pushSpec(); }
   for(const k in BANDS) barEl[k].style.height=Math.min(100,(F[k]||0)*100)+'%';
   for(const [k] of DER){ const v=F[k]||0; ftV[k].textContent=Math.round(v*100);
