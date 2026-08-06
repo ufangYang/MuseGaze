@@ -47,6 +47,7 @@
       <button data-mode="plasma">Plasma</button>
       <button data-mode="spectrum">Spectrum</button>
       <button data-mode="butterfly">Butterfly</button>
+      <button data-mode="drift">Drift</button>
       <button data-mode="scenes">Scenes</button>
     </div>
     <span id="status">Waiting for Control…</span>
@@ -225,9 +226,14 @@ function drawSpectrum2(breath){
   alphaBloom(breath);
 }
 
-// ---- BUTTERFLY: a shapely butterfly rests on a flower. CALM (high alpha, low beta) → wings held
-//  open and still, large and luminous. AROUSAL (Beta+Gamma) → wings flap, faster the higher it goes.
-//  Alpha swells its size. (Swarm of extra butterflies on Theta/Gamma is the next step.)
+// ---- BUTTERFLY / DRIFT: a shapely butterfly rests on a flower. CALM (high alpha, low beta) → wings
+//  held open and still, large and luminous. AROUSAL (Beta+Gamma) → wings flap, faster the higher it
+//  goes. Alpha swells its size. The central butterfly behaves the same in BOTH modes.
+//  SWARM — extra butterflies spawn and fly around the central one:
+//   · Butterfly mode (variant 'gamma') → arousal (Beta+Gamma) rises → an energetic warm-hued flock
+//     that darts and flutters fast, more of them the higher arousal climbs.
+//   · Drift mode    (variant 'theta') → theta rises → a dreamy violet flight that drifts slowly
+//     upward on gentle sine paths, wings gliding, more of them the deeper theta goes.
 let flapPhase=0;
 function wingPath(fore,s){ ctx.beginPath();     // right-side wing outline (mirror with negative x-scale)
   if(fore){ ctx.moveTo(0,-0.04*s);
@@ -281,10 +287,77 @@ function drawFlower(cx,by,fs){
   ctx.fillStyle='hsla(40,90%,44%,0.7)';
   for(let i=0;i<9;i++){ const a=i/9*Math.PI*2; ctx.beginPath(); ctx.arc(cx+Math.cos(a)*fs*0.2,by+Math.sin(a)*fs*0.2,fs*0.045,0,Math.PI*2); ctx.fill(); }
 }
-function drawButterfly(breath){
+// -- swarm: a pool of little butterflies whose count tracks the driving band.
+let swarm=[], spawnAcc=0; const SWARM_MAX=20;
+function swarmDrive(variant){                                    // 0..1 target intensity
+  return variant==='theta' ? Math.min(1, F.Theta*1.5)
+                           : Math.min(1,(F.Beta+F.Gamma)*1.15);
+}
+function makeFly(variant){
+  const w=canvas.width,h=canvas.height,R=Math.min(w,h);
+  const f={ x:Math.random()*w, y:Math.random()*h, style:variant,
+    s:R*(0.028+Math.random()*0.03), flap:Math.random()*Math.PI*2,
+    phase:Math.random()*Math.PI*2, op:0 };
+  if(variant==='gamma'){                                         // fast, erratic, warm
+    const a=Math.random()*Math.PI*2, sp=R*(0.004+Math.random()*0.005);
+    f.vx=Math.cos(a)*sp; f.vy=Math.sin(a)*sp; f.hue=18+Math.random()*46;   // amber→coral
+  } else {                                                       // slow, floaty, cool
+    f.vx=(Math.random()-0.5)*R*0.0009; f.vy=-R*(0.0005+Math.random()*0.0009);
+    f.hue=248+Math.random()*64; f.s*=1.25;                       // violet→blue, a touch larger
+  }
+  return f;
+}
+function stepFly(f,drive){
+  const w=canvas.width,h=canvas.height,R=Math.min(w,h);
+  f.phase += 0.02;
+  if(f.style==='gamma'){
+    f.flap += 0.45 + drive*0.55;
+    f.vx += (Math.random()-0.5)*R*0.0018; f.vy += (Math.random()-0.5)*R*0.0018;   // jitter
+    const sp=Math.hypot(f.vx,f.vy), max=R*(0.005+drive*0.013);
+    if(sp>max){ f.vx*=max/sp; f.vy*=max/sp; }
+    f.x+=f.vx; f.y+=f.vy;
+  } else {
+    f.flap += 0.05 + drive*0.07;                                 // wings glide, barely flapping
+    f.x += f.vx + Math.sin(f.phase*1.3)*R*0.0009;                // gentle sine sway
+    f.y += f.vy + Math.cos(f.phase)*R*0.0004;
+  }
+  if(f.x<-0.06*w) f.x=1.06*w; else if(f.x>1.06*w) f.x=-0.06*w;   // wrap around edges
+  if(f.y<-0.06*h) f.y=1.06*h; else if(f.y>1.06*h) f.y=-0.06*h;
+}
+function updateSwarm(variant){
+  const drive=swarmDrive(variant), target=Math.round(drive*SWARM_MAX);
+  spawnAcc += (variant==='gamma'?0.5:0.3);                       // gradual arrival, no pop-in
+  if(swarm.length<target && spawnAcc>=1){ spawnAcc=0; swarm.push(makeFly(variant)); }
+  for(let i=0;i<swarm.length;i++){ const f=swarm[i];
+    f.dying = i>=target;                                         // over target → fade the newest out
+    stepFly(f,drive);
+    const tOp = f.dying?0:(f.style==='gamma'?0.9:0.7);
+    f.op += (tOp-f.op)*0.06;
+  }
+  swarm = swarm.filter(f=> !(f.dying && f.op<0.03));
+  return drive;
+}
+function drawSwarmFly(f){
+  const open=0.28+0.72*(0.5-0.5*Math.cos(f.flap));               // wings beat 0.28↔1
+  ctx.save(); ctx.translate(f.x,f.y);
+  if(f.style==='gamma') ctx.rotate(Math.atan2(f.vy,f.vx)+Math.PI/2);   // bank into travel
+  const s=f.s, op=f.op, light=f.style==='gamma'?60:72;
+  ctx.globalCompositeOperation='lighter';                        // glow, so the flock reads as light
+  for(const fore of [false,true]) for(const side of [-1,1]){
+    ctx.save(); ctx.scale(side*open,1); wingPath(fore,s);
+    const hue=fore?f.hue:(f.hue+24)%360;
+    ctx.fillStyle=`hsla(${hue},92%,${light}%,${op*(fore?1:0.8)})`; ctx.fill(); ctx.restore();
+  }
+  ctx.globalCompositeOperation='source-over';
+  ctx.fillStyle=`hsla(${f.hue},40%,14%,${op})`;                  // slim body
+  ctx.beginPath(); ctx.ellipse(0,0,s*0.06,s*0.52,0,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+function drawButterfly(breath, variant){
   const w=canvas.width,h=canvas.height;
   ctx.globalCompositeOperation='source-over'; ctx.fillStyle='rgba(7,8,16,0.32)'; ctx.fillRect(0,0,w,h);
   const cx=w/2, R=Math.min(w,h);
+  updateSwarm(variant);
   const arousal=Math.min(1,(F.Beta+F.Gamma)*1.15);
   flapPhase += 0.12 + arousal*0.6;                               // still when calm, quick flap when aroused
   const wingOpen = Math.max(0.16, 1 - arousal*(0.5 - 0.5*Math.cos(flapPhase)));
@@ -292,6 +365,7 @@ function drawButterfly(breath){
   const cy = h/2 - R*0.06;                                       // butterfly sits a little above centre
   const blossomY = cy + s*0.62 + s*0.55;                         // flower just under the body
   const hueC = (255 - warm() + 360)%360;                         // violet-blue, FAA warms it
+  for(const f of swarm) drawSwarmFly(f);                         // flock behind the hero butterfly
   ctx.globalCompositeOperation='lighter';                        // soft aura, grows with alpha
   const gl=ctx.createRadialGradient(cx,cy,0,cx,cy,s*1.8);
   gl.addColorStop(0,`hsla(${hueC},80%,60%,${0.04+F.Alpha*0.16})`); gl.addColorStop(1,`hsla(${hueC},80%,55%,0)`);
@@ -319,6 +393,7 @@ modeBox.addEventListener('click', e => { const btn=e.target.closest('button'); i
   mode=btn.dataset.mode; [...modeBox.children].forEach(c=>c.classList.toggle('on',c===btn));
   ctx.clearRect(0,0,canvas.width,canvas.height);
   if(mode==='plasma') initPlasma();
+  swarm=[]; spawnAcc=0;                                          // fresh flock per mode (gamma↔theta differ)
   const sc=(mode==='scenes'); showSceneLayers(sc); if(sc) lastSceneT=-1e9; });
 
 const statusEl=document.getElementById('status'), bpmEl=document.getElementById('bpm'),
@@ -328,7 +403,8 @@ const statusEl=document.getElementById('status'), bpmEl=document.getElementById(
 const CAPTION={ bloom:'Close your eyes — alpha opens the bloom',
   plasma:'Liquid ink · Alpha swells it · Beta quickens the flow',
   spectrum:'Your live 3–45 Hz spectrum · color = frequency · green ring = alpha',
-  butterfly:'Calm holds the wings still · arousal makes them flap',
+  butterfly:'Calm holds the wings still · arousal flaps them & summons an energetic flock',
+  drift:'Theta deepens · dreamy butterflies drift in',
   scenes:'The scene follows your brain state' };
 
 resize();
@@ -342,7 +418,8 @@ function tick(){
   if(mode==='bloom') drawBloom(breath);
   else if(mode==='plasma') drawPlasma(breath);
   else if(mode==='spectrum') drawSpectrum2(breath);
-  else if(mode==='butterfly') drawButterfly(breath);
+  else if(mode==='butterfly') drawButterfly(breath,'gamma');
+  else if(mode==='drift') drawButterfly(breath,'theta');
   else if(mode==='scenes'){ const now=performance.now();
     if(now-lastSceneT>8000){ const keys=Object.keys(SCENES); const s=sceneFor();
       if(s!==curScene) crossfadeTo(s);                   // brain state changed → show its scene
@@ -363,7 +440,8 @@ document.getElementById('presentBtn').addEventListener('click', () => {
   document.body.classList.toggle('present');
   if(!document.fullscreenElement) document.documentElement.requestFullscreen?.(); else document.exitFullscreen?.(); });
 
-window.__muse = { bus, F, state: () => ({ lastRx, bpm, alpha:alphaSmooth, mode }) };
+window.__muse = { bus, F, state: () => ({ lastRx, bpm, alpha:alphaSmooth, mode, swarm:swarm.length }) };
+window.__swarmLen = () => swarm.length;
 tick();
 </script>
 </body>
