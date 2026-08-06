@@ -46,6 +46,7 @@
       <button data-mode="bloom" class="on">Bloom</button>
       <button data-mode="plasma">Plasma</button>
       <button data-mode="spectrum">Spectrum</button>
+      <button data-mode="butterfly">Butterfly</button>
       <button data-mode="scenes">Scenes</button>
     </div>
     <span id="status">Waiting for Control…</span>
@@ -224,6 +225,83 @@ function drawSpectrum2(breath){
   alphaBloom(breath);
 }
 
+// ---- BUTTERFLY: a shapely butterfly rests on a flower. CALM (high alpha, low beta) → wings held
+//  open and still, large and luminous. AROUSAL (Beta+Gamma) → wings flap, faster the higher it goes.
+//  Alpha swells its size. (Swarm of extra butterflies on Theta/Gamma is the next step.)
+let flapPhase=0;
+function wingPath(fore,s){ ctx.beginPath();     // right-side wing outline (mirror with negative x-scale)
+  if(fore){ ctx.moveTo(0,-0.04*s);
+    ctx.bezierCurveTo(0.12*s,-0.60*s, 0.60*s,-0.66*s, 0.70*s,-0.30*s);
+    ctx.bezierCurveTo(0.78*s,-0.04*s, 0.42*s,-0.02*s, 0,-0.04*s);
+  } else { ctx.moveTo(0,0.04*s);
+    ctx.bezierCurveTo(0.34*s,0.06*s, 0.56*s,0.40*s, 0.34*s,0.64*s);
+    ctx.bezierCurveTo(0.22*s,0.78*s, 0.05*s,0.44*s, 0,0.04*s);
+  } ctx.closePath(); }
+function drawOneButterfly(cx,cy,s,wingOpen,hueC,op){
+  for(const fore of [false,true]){                 // hindwings behind, forewings in front
+    for(const side of [-1,1]){
+      ctx.save(); ctx.translate(cx,cy); ctx.scale(side*wingOpen,1);
+      wingPath(fore,s);
+      const hue=fore?hueC:(hueC+32)%360, cyG=fore?-0.22*s:0.28*s;
+      const rg=ctx.createRadialGradient(0.15*s,cyG,0,0.15*s,cyG,0.8*s);
+      rg.addColorStop(0,`hsla(${hue},92%,42%,${op})`);          // rich inner
+      rg.addColorStop(0.55,`hsla(${hue},90%,58%,${op})`);
+      rg.addColorStop(1,`hsla(${(hue+18)%360},95%,72%,${op})`); // luminous margin
+      ctx.fillStyle=rg; ctx.fill();
+      ctx.strokeStyle=`hsla(${hue},55%,14%,${0.7*op})`; ctx.lineWidth=Math.max(1,s*0.018); ctx.stroke();
+      ctx.fillStyle=`hsla(0,0%,100%,${0.9*op})`;                // pale marginal spots
+      const dots=fore?[[0.52,-0.44],[0.6,-0.30],[0.62,-0.16]]:[[0.4,0.46],[0.26,0.58]];
+      for(const [dx,dy] of dots){ ctx.beginPath(); ctx.arc(dx*s,dy*s,s*0.032,0,Math.PI*2); ctx.fill(); }
+      ctx.restore();
+    }
+  }
+  // body, head, antennae
+  const bg=ctx.createLinearGradient(cx-s*0.06,0,cx+s*0.06,0);
+  bg.addColorStop(0,`rgba(8,8,14,${op})`); bg.addColorStop(0.5,`rgba(40,40,56,${op})`); bg.addColorStop(1,`rgba(8,8,14,${op})`);
+  ctx.fillStyle=bg; ctx.beginPath(); ctx.ellipse(cx,cy,s*0.058,s*0.6,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=`rgba(14,14,22,${op})`; ctx.beginPath(); ctx.arc(cx,cy-s*0.58,s*0.08,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle=`rgba(18,18,28,${0.9*op})`; ctx.lineWidth=Math.max(1,s*0.016);
+  for(const t of [-1,1]){ ctx.beginPath(); ctx.moveTo(cx,cy-s*0.63);
+    ctx.quadraticCurveTo(cx+t*s*0.16,cy-s*0.88,cx+t*s*0.24,cy-s*0.8); ctx.stroke();
+    ctx.fillStyle=`rgba(18,18,28,${0.9*op})`; ctx.beginPath(); ctx.arc(cx+t*s*0.24,cy-s*0.8,s*0.03,0,Math.PI*2); ctx.fill(); }
+}
+function drawFlower(cx,by,fs){
+  const h=canvas.height;
+  ctx.strokeStyle='rgba(74,132,84,0.9)'; ctx.lineWidth=fs*0.09; ctx.lineCap='round';   // stem
+  ctx.beginPath(); ctx.moveTo(cx,h); ctx.quadraticCurveTo(cx-fs*0.7,(by+h)/2,cx,by+fs*0.1); ctx.stroke();
+  ctx.save(); ctx.translate(cx-fs*0.55,(by+h)/2-fs*0.2); ctx.rotate(-0.7);              // leaf
+  ctx.fillStyle='rgba(86,156,96,0.85)'; ctx.beginPath(); ctx.ellipse(0,0,fs*0.7,fs*0.26,0,0,Math.PI*2); ctx.fill(); ctx.restore();
+  const petals=7;                                                                       // blossom
+  for(let i=0;i<petals;i++){ const a=i/petals*Math.PI*2;
+    ctx.save(); ctx.translate(cx+Math.cos(a)*fs*0.5, by+Math.sin(a)*fs*0.5); ctx.rotate(a);
+    const pg=ctx.createRadialGradient(0,0,0,0,0,fs*0.62);
+    pg.addColorStop(0,'hsla(342,85%,86%,0.97)'); pg.addColorStop(1,'hsla(338,80%,64%,0.94)');
+    ctx.fillStyle=pg; ctx.beginPath(); ctx.ellipse(fs*0.28,0,fs*0.42,fs*0.24,0,0,Math.PI*2); ctx.fill(); ctx.restore(); }
+  ctx.fillStyle='hsla(46,92%,62%,1)'; ctx.beginPath(); ctx.arc(cx,by,fs*0.34,0,Math.PI*2); ctx.fill();   // center
+  ctx.fillStyle='hsla(40,90%,44%,0.7)';
+  for(let i=0;i<9;i++){ const a=i/9*Math.PI*2; ctx.beginPath(); ctx.arc(cx+Math.cos(a)*fs*0.2,by+Math.sin(a)*fs*0.2,fs*0.045,0,Math.PI*2); ctx.fill(); }
+}
+function drawButterfly(breath){
+  const w=canvas.width,h=canvas.height;
+  ctx.globalCompositeOperation='source-over'; ctx.fillStyle='rgba(7,8,16,0.32)'; ctx.fillRect(0,0,w,h);
+  const cx=w/2, R=Math.min(w,h);
+  const arousal=Math.min(1,(F.Beta+F.Gamma)*1.15);
+  flapPhase += 0.12 + arousal*0.6;                               // still when calm, quick flap when aroused
+  const wingOpen = Math.max(0.16, 1 - arousal*(0.5 - 0.5*Math.cos(flapPhase)));
+  const s = R*(0.17 + F.Alpha*0.11) * (0.94+breath*0.08);        // bigger + serener with alpha
+  const cy = h/2 - R*0.06;                                       // butterfly sits a little above centre
+  const blossomY = cy + s*0.62 + s*0.55;                         // flower just under the body
+  const hueC = (255 - warm() + 360)%360;                         // violet-blue, FAA warms it
+  ctx.globalCompositeOperation='lighter';                        // soft aura, grows with alpha
+  const gl=ctx.createRadialGradient(cx,cy,0,cx,cy,s*1.8);
+  gl.addColorStop(0,`hsla(${hueC},80%,60%,${0.04+F.Alpha*0.16})`); gl.addColorStop(1,`hsla(${hueC},80%,55%,0)`);
+  ctx.fillStyle=gl; ctx.beginPath(); ctx.arc(cx,cy,s*1.8,0,Math.PI*2); ctx.fill();
+  ctx.globalCompositeOperation='source-over';
+  drawFlower(cx, blossomY, s*0.62);
+  drawOneButterfly(cx, cy, s, wingOpen, hueC, 1);
+  alphaBloom(breath);
+}
+
 // ---- Scenes: pre-made cinematic images; the classified brain state cross-fades between them.
 const SCENES={ odyssey:'./odyssey.png', mobydick:'./mobydick.png', wonderland:'./wonderland.png', alice:'./alice.png' };
 for(const k in SCENES){ const im=new Image(); im.src=SCENES[k]; }
@@ -250,6 +328,7 @@ const statusEl=document.getElementById('status'), bpmEl=document.getElementById(
 const CAPTION={ bloom:'Close your eyes — alpha opens the bloom',
   plasma:'Liquid ink · Alpha swells it · Beta quickens the flow',
   spectrum:'Your live 3–45 Hz spectrum · color = frequency · green ring = alpha',
+  butterfly:'Calm holds the wings still · arousal makes them flap',
   scenes:'The scene follows your brain state' };
 
 resize();
@@ -263,6 +342,7 @@ function tick(){
   if(mode==='bloom') drawBloom(breath);
   else if(mode==='plasma') drawPlasma(breath);
   else if(mode==='spectrum') drawSpectrum2(breath);
+  else if(mode==='butterfly') drawButterfly(breath);
   else if(mode==='scenes'){ const now=performance.now();
     if(now-lastSceneT>8000){ const keys=Object.keys(SCENES); const s=sceneFor();
       if(s!==curScene) crossfadeTo(s);                   // brain state changed → show its scene
