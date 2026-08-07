@@ -83,7 +83,7 @@ const BANDS = ['Delta','Theta','Alpha','Beta','Gamma'];
 const BAND_HUE = { Delta:265, Theta:217, Alpha:142, Beta:38, Gamma:0 };
 const F = { Delta:0,Theta:0,Alpha:0,Beta:0,Gamma:0, FAA:0.5, TB:0.5, HRV:0.5, LZ:0.5 };
 const Ftarget = { ...F };
-let bpm=0, pulse=0, lastRx=-1e9, curState='Neutral', aGain=1, aManual=0;   // aGain: alpha→bloom-open sens; aManual: manual preview override (0=live)
+let bpm=0, pulse=0, lastRx=-1e9, curState='Neutral', aGain=1, aManual=0, rThresh=0.65;  // rThresh: alpha level needed to earn the rainbow
 let specTarget=new Array(49).fill(0), specDisp=new Array(49).fill(0);
 let route={ size:'Alpha', speed:'Beta', ripple:'Theta', warmth:'FAA', glow:'HRV' };
 bus.onmessage = (e) => { const m=e.data; if(!m||!m.f) return;
@@ -93,6 +93,7 @@ bus.onmessage = (e) => { const m=e.data; if(!m||!m.f) return;
   if (m.spec) specTarget=m.spec;
   if (typeof m.aGain==='number') aGain=m.aGain;
   if (typeof m.aManual==='number') aManual=m.aManual;
+  if (typeof m.rThresh==='number') rThresh=m.rThresh;
   bpm=m.bpm||0; if(m.pulse>pulse) pulse=m.pulse; lastRx=performance.now(); };
 function easeSignals(){ for(const k in F) F[k]+=((Ftarget[k]??F[k])-F[k])*0.14;
   for(let k=0;k<49;k++) specDisp[k]+=((specTarget[k]||0)-specDisp[k])*0.18; }
@@ -140,8 +141,9 @@ function drawBloom(breath){
   bgv.addColorStop(0,'rgba(12,16,24,0.30)'); bgv.addColorStop(1,'rgba(4,5,9,0.34)');
   ctx.fillStyle=bgv; ctx.fillRect(0,0,w,h);
   const cx=w/2,cy=h/2, R=Math.min(w,h);
-  let a=Math.min(1,alphaSmooth*1.7*aGain); const b=Math.min(1,F.Beta*1.7);   // aGain = Control's alpha-open sensitivity
-  if(aManual>0.001) a=aManual;                         // manual Bloom-preview override (Control page) so you can SEE it
+  let a=Math.min(1,alphaSmooth*1.7*aGain), effA=Math.min(1,alphaSmooth);   // a = petal openness (aGain-boosted); effA = TRUE alpha for the rainbow gate
+  if(aManual>0.001){ a=aManual; effA=aManual; }        // manual preview overrides both (Control page)
+  const b=Math.min(1,F.Beta*1.7);
   const bal=a/(a+b+0.001);                             // 1 = calm(alpha) · 0 = thinking(beta)
   bloomRot   += 0.0016 + b*0.011;                      // calm drifts slowly; thinking turns a little quicker
   const breathe = 0.93 + breath*0.13;
@@ -180,8 +182,8 @@ function drawBloom(breath){
   ctx.beginPath(); ctx.arc(cx,cy,outR,0,Math.PI*2); ctx.stroke();
   for(let k=1;k<=2;k++){ ctx.strokeStyle=`hsla(${lineHue},76%,82%,${0.06+a*0.12})`; ctx.lineWidth=Math.max(1,R*0.0013);
     ctx.beginPath(); ctx.arc(cx,cy,outR*(0.42+0.26*k),0,Math.PI*2); ctx.stroke(); }
-  // --- interlocking rainbow CRESCENTS (open "C" arcs, gaps facing outward): revealed as ALPHA opens ---
-  const ro=Math.max(0,Math.min(1,(a-0.5)/0.4));
+  // --- interlocking rainbow CRESCENTS: earned only when TRUE alpha crosses the (adjustable) threshold ---
+  const ro=Math.max(0,Math.min(1,(effA-rThresh)/Math.max(0.05,(1-rThresh)*0.6)));
   if(ro>0.01){ const er=outR*0.42, d=er*0.5, seg=54, rsat=Math.max(82,sat), gap=0.62;  // gap → open end
     const arcs=[ {ex:cx-d, gapAt:Math.PI},   // left crescent, opening faces left (outward)
                  {ex:cx+d, gapAt:0} ];        // right crescent, opening faces right (outward)
@@ -211,6 +213,9 @@ function drawBloom(breath){
   core.addColorStop(1,`hsla(${hue},66%,58%,0)`);
   ctx.fillStyle=core; ctx.beginPath(); ctx.arc(cx,cy,coreR,0,Math.PI*2); ctx.fill();
   ctx.globalCompositeOperation='source-over';
+  if(aManual>0.001){ ctx.fillStyle='rgba(255,200,90,0.6)'; ctx.font=`600 ${Math.round(R*0.018)}px system-ui,-apple-system,sans-serif`;
+    ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    ctx.fillText('PREVIEW · manual override — set Bloom preview to 0 for live', 18, h-18); }
 }
 
 // ---- PLASMA: liquid-ink metaballs. Soft glowing blobs drift on organic paths and
