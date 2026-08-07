@@ -147,19 +147,21 @@ function drawBloom(breath){
   const petalR  = R*(0.135 + a*0.05)*breathe;          // soft petal radius (kept < ring so petals read)
   const petals  = Math.round(6 + (1-bal)*3);           // THINKING adds a couple of petals
   const hue     = 48 + (1-bal)*200;                    // CALM warm gold/amber → THINKING periwinkle
+  const mag     = Math.min(1,(F.Delta+F.Theta+F.Alpha+F.Beta+F.Gamma)*0.4);  // overall power → colour INTENSITY
+  const sat     = Math.round(48+mag*44);               // weak signal = pale/dreamy · strong = vivid
   ctx.globalCompositeOperation='source-over';          // translucent petals — pastel overlaps, no white blow-out
   for(let L=0; L<2; L++){                              // two layers → soft depth
     const lr=open*(1-L*0.30), pr=petalR*(1-L*0.14), rot=bloomRot*(L%2?-1:1);
     for(let i=0;i<petals;i++){
       const ang=rot + i/petals*Math.PI*2 + L*0.5;
       const px=cx+Math.cos(ang)*lr, py=cy+Math.sin(ang)*lr;
-      const ph=(hue - 18 + i/petals*44 + L*6 +360)%360, A=(0.22+a*0.14)*(1-L*0.34);
+      const ph=(hue - 18 + i/petals*44 + L*6 +360)%360, A=(0.20+a*0.12)*(1-L*0.34)*(0.7+0.5*mag);
       ctx.save();
-      ctx.shadowColor=`hsla(${ph},72%,58%,0.5)`; ctx.shadowBlur=pr*0.5;      // soft frosted glow
+      ctx.shadowColor=`hsla(${ph},${sat}%,58%,0.5)`; ctx.shadowBlur=pr*0.7;   // fluffier frosted glow
       const rg=ctx.createRadialGradient(px,py,0,px,py,pr);
-      rg.addColorStop(0,`hsla(${ph},72%,72%,${A})`);
-      rg.addColorStop(0.6,`hsla(${ph},66%,60%,${A*0.55})`);
-      rg.addColorStop(1,`hsla(${ph},64%,54%,0)`);
+      rg.addColorStop(0,`hsla(${ph},${sat}%,74%,${A})`);
+      rg.addColorStop(0.6,`hsla(${ph},${sat-6}%,62%,${A*0.55})`);
+      rg.addColorStop(1,`hsla(${ph},${sat-8}%,56%,0)`);
       ctx.fillStyle=rg; ctx.beginPath(); ctx.arc(px,py,pr,0,Math.PI*2); ctx.fill();
       ctx.restore();
     }
@@ -176,16 +178,20 @@ function drawBloom(breath){
   ctx.beginPath(); ctx.arc(cx,cy,outR,0,Math.PI*2); ctx.stroke();
   for(let k=1;k<=2;k++){ ctx.strokeStyle=`hsla(${lineHue},76%,82%,${0.06+a*0.12})`; ctx.lineWidth=Math.max(1,R*0.0013);
     ctx.beginPath(); ctx.arc(cx,cy,outR*(0.42+0.26*k),0,Math.PI*2); ctx.stroke(); }
-  // --- rainbow ring: fades in as ALPHA opens the bloom (appears when you reach a calm, open state) ---
+  // --- interlocking rainbow rings: revealed inside as ALPHA opens the bloom (dreamy, Apple-style) ---
   const ro=Math.max(0,Math.min(1,(a-0.5)/0.4));
-  if(ro>0.01){ const rr=outR*0.72, seg=90;
-    ctx.globalCompositeOperation='source-over'; ctx.lineCap='butt'; ctx.shadowBlur=0;
-    ctx.strokeStyle=`rgba(6,8,14,${0.5*ro})`; ctx.lineWidth=Math.max(7,R*0.024);   // soft dark backing so colours read
-    ctx.beginPath(); ctx.arc(cx,cy,rr,0,Math.PI*2); ctx.stroke();
-    ctx.lineWidth=Math.max(3,R*0.014);
-    for(let i=0;i<seg;i++){ const a0=i/seg*Math.PI*2+bloomRot*0.5, a1=(i+1)/seg*Math.PI*2+bloomRot*0.5;
-      ctx.strokeStyle=`hsla(${Math.round(i/seg*360)},95%,60%,${0.92*ro})`;         // true rainbow
-      ctx.beginPath(); ctx.arc(cx,cy,rr,a0,a1+0.02); ctx.stroke(); }
+  if(ro>0.01){ const er=outR*0.4, d=er*0.6, seg=64, rsat=Math.max(82,sat);
+    ctx.globalCompositeOperation='source-over'; ctx.lineCap='round';
+    ctx.shadowBlur=0;                                                             // soft dark backing so colours read
+    for(const sgn of [-1,1]){ ctx.strokeStyle=`rgba(6,8,14,${0.5*ro})`; ctx.lineWidth=Math.max(10,R*0.032);
+      ctx.beginPath(); ctx.arc(cx+sgn*d,cy,er,0,Math.PI*2); ctx.stroke(); }
+    for(const sgn of [-1,1]){ ctx.save(); ctx.shadowBlur=R*0.016;                 // two rainbow loops that interlock
+      for(let i=0;i<seg;i++){ const a0=i/seg*Math.PI*2+bloomRot*0.6, a1=(i+1)/seg*Math.PI*2+bloomRot*0.6;
+        const hh=Math.round(((i/seg*360)+(sgn>0?0:180))%360);
+        ctx.strokeStyle=`hsla(${hh},${rsat}%,62%,${0.9*ro})`; ctx.shadowColor=`hsla(${hh},95%,62%,0.5)`;
+        ctx.lineWidth=Math.max(4,R*0.015);
+        ctx.beginPath(); ctx.arc(cx+sgn*d,cy,er,a0,a1+0.02); ctx.stroke(); }
+      ctx.restore(); }
     ctx.globalCompositeOperation='lighter'; }
   // gentle luminous core — warm gold when calm, cool lavender when thinking (soft, not blown out)
   const coreR=petalR*0.8, coreHue=(50+(1-bal)*190)%360;
