@@ -83,7 +83,7 @@ const BANDS = ['Delta','Theta','Alpha','Beta','Gamma'];
 const BAND_HUE = { Delta:265, Theta:217, Alpha:142, Beta:38, Gamma:0 };
 const F = { Delta:0,Theta:0,Alpha:0,Beta:0,Gamma:0, FAA:0.5, TB:0.5, HRV:0.5, LZ:0.5 };
 const Ftarget = { ...F };
-let bpm=0, pulse=0, lastRx=-1e9, curState='Neutral', aGain=1;   // aGain: alpha→bloom-open sensitivity (from Control)
+let bpm=0, pulse=0, lastRx=-1e9, curState='Neutral', aGain=1, aManual=0;   // aGain: alpha→bloom-open sens; aManual: manual preview override (0=live)
 let specTarget=new Array(49).fill(0), specDisp=new Array(49).fill(0);
 let route={ size:'Alpha', speed:'Beta', ripple:'Theta', warmth:'FAA', glow:'HRV' };
 bus.onmessage = (e) => { const m=e.data; if(!m||!m.f) return;
@@ -92,6 +92,7 @@ bus.onmessage = (e) => { const m=e.data; if(!m||!m.f) return;
   if (m.state) curState=m.state;
   if (m.spec) specTarget=m.spec;
   if (typeof m.aGain==='number') aGain=m.aGain;
+  if (typeof m.aManual==='number') aManual=m.aManual;
   bpm=m.bpm||0; if(m.pulse>pulse) pulse=m.pulse; lastRx=performance.now(); };
 function easeSignals(){ for(const k in F) F[k]+=((Ftarget[k]??F[k])-F[k])*0.14;
   for(let k=0;k<49;k++) specDisp[k]+=((specTarget[k]||0)-specDisp[k])*0.18; }
@@ -139,7 +140,8 @@ function drawBloom(breath){
   bgv.addColorStop(0,'rgba(12,16,24,0.30)'); bgv.addColorStop(1,'rgba(4,5,9,0.34)');
   ctx.fillStyle=bgv; ctx.fillRect(0,0,w,h);
   const cx=w/2,cy=h/2, R=Math.min(w,h);
-  const a=Math.min(1,alphaSmooth*1.7*aGain), b=Math.min(1,F.Beta*1.7);   // aGain = Control's alpha-open sensitivity
+  let a=Math.min(1,alphaSmooth*1.7*aGain); const b=Math.min(1,F.Beta*1.7);   // aGain = Control's alpha-open sensitivity
+  if(aManual>0.001) a=aManual;                         // manual Bloom-preview override (Control page) so you can SEE it
   const bal=a/(a+b+0.001);                             // 1 = calm(alpha) · 0 = thinking(beta)
   bloomRot   += 0.0016 + b*0.011;                      // calm drifts slowly; thinking turns a little quicker
   const breathe = 0.93 + breath*0.13;
@@ -186,13 +188,18 @@ function drawBloom(breath){
     ctx.globalCompositeOperation='source-over'; ctx.lineCap='round'; ctx.shadowBlur=0;
     for(const c of arcs){ ctx.strokeStyle=`rgba(6,8,14,${0.5*ro})`; ctx.lineWidth=Math.max(11,R*0.034); // dark backing
       ctx.beginPath(); ctx.arc(c.ex,cy,er, c.gapAt+gap, c.gapAt-gap+Math.PI*2); ctx.stroke(); }
-    for(const c of arcs){ ctx.save(); ctx.shadowBlur=R*0.016;                     // rainbow open C
+    for(const c of arcs){ ctx.save();                                             // rainbow open C — diffuse + core
       const start=c.gapAt+gap, sweep=Math.PI*2-2*gap;
+      ctx.shadowBlur=R*0.032; ctx.lineWidth=Math.max(11,R*0.032);                 // diffuse halo: wide, blurred, colours bleed
       for(let i=0;i<seg;i++){ const a0=start+i/seg*sweep, a1=start+(i+1)/seg*sweep;
-        const hh=Math.round((i/seg*360 + bloomRot*28)%360);                       // gentle hue shimmer, gap stays put
-        ctx.strokeStyle=`hsla(${hh},${rsat}%,62%,${0.9*ro})`; ctx.shadowColor=`hsla(${hh},95%,62%,0.5)`;
-        ctx.lineWidth=Math.max(4,R*0.016);
-        ctx.beginPath(); ctx.arc(c.ex,cy,er,a0,a1+0.02); ctx.stroke(); }
+        const hh=Math.round((i/seg*360 + bloomRot*28)%360);
+        ctx.strokeStyle=`hsla(${hh},90%,66%,${0.34*ro})`; ctx.shadowColor=`hsla(${hh},95%,66%,0.65)`;
+        ctx.beginPath(); ctx.arc(c.ex,cy,er,a0,a1+0.10); ctx.stroke(); }
+      ctx.shadowBlur=R*0.012; ctx.lineWidth=Math.max(3,R*0.011);                  // soft core so it still reads
+      for(let i=0;i<seg;i++){ const a0=start+i/seg*sweep, a1=start+(i+1)/seg*sweep;
+        const hh=Math.round((i/seg*360 + bloomRot*28)%360);
+        ctx.strokeStyle=`hsla(${hh},${rsat}%,72%,${0.6*ro})`; ctx.shadowColor='transparent';
+        ctx.beginPath(); ctx.arc(c.ex,cy,er,a0,a1+0.07); ctx.stroke(); }
       ctx.restore(); }
     ctx.globalCompositeOperation='lighter'; }
   // gentle luminous core — warm gold when calm, cool lavender when thinking (soft, not blown out)

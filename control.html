@@ -73,7 +73,7 @@ const BANDS = { Delta:[1,4], Theta:[4,8], Alpha:[8,13], Beta:[13,30], Gamma:[30,
 const BAND_COLORS = { Delta:'#8b5cf6', Theta:'#3b82f6', Alpha:'#22c55e', Beta:'#f59e0b', Gamma:'#ef4444' };
 const CH_COL = ['#8b5cf6','#3b82f6','#22c55e','#f59e0b'];
 const CH_NAME = ['TP9','AF7','AF8','TP10'];
-const ctrl = { avgChannels:true, plotCh:1, smooth:0.15, sens:45, alphaSens:50 };  // sens→band gain; alphaSens→how easily the Bloom opens
+const ctrl = { avgChannels:true, plotCh:1, smooth:0.15, sens:45, alphaSens:50, bloomPreview:0 };  // bloomPreview: manual force-open (0=live)
 const useBand = { Delta:true, Theta:true, Alpha:true, Beta:true, Gamma:true };
 
 const buffers = Array.from({length:CH},()=>new Float32Array(N));
@@ -222,7 +222,10 @@ mkNode('power','PowerBands','#f59e0b',740,86,['b'],['f'],
    <div style="color:#5b647a;font-size:9px;margin-top:2px;">low = ignore ambient noise · high = react to faint changes</div>
    <div style="margin-top:8px;color:#7f8aa0;display:flex;justify-content:space-between;font-size:11px;"><span>Alpha → Bloom open</span><span id="aSensVal">50</span></div>
    <input id="aSensSl" type="range" min="1" max="100" step="1" value="50" style="width:100%">
-   <div style="color:#5b647a;font-size:9px;margin-top:2px;">higher = Bloom opens (and rainbow appears) with less alpha</div>`);
+   <div style="color:#5b647a;font-size:9px;margin-top:2px;">higher = Bloom opens (and rainbow appears) with less alpha</div>
+   <div style="margin-top:8px;color:#e8b04a;display:flex;justify-content:space-between;font-size:11px;"><span>Bloom preview (manual)</span><span id="aManVal">0</span></div>
+   <input id="aManSl" type="range" min="0" max="100" step="1" value="0" style="width:100%">
+   <div style="color:#5b647a;font-size:9px;margin-top:2px;">drag up to force the Bloom open &amp; reveal the rainbow (0 = live EEG)</div>`);
 mkNode('conn','Connectivity','#38bdf8',260,300,['s'],[],
   `<canvas id="cConn" width="120" height="120"></canvas><div style="margin-top:4px;color:#7f8aa0;">4×4 channel correlation</div>`);
 mkNode('spec','Spectrogram','#e879f9',500,300,['s'],[],
@@ -256,6 +259,8 @@ document.getElementById('smoothSl').addEventListener('input',e=>ctrl.smooth=+e.t
   if(ss) ss.addEventListener('input',e=>{ ctrl.sens=+e.target.value; if(sv) sv.textContent=e.target.value; }); }
 { const as=document.getElementById('aSensSl'), av=document.getElementById('aSensVal');
   if(as) as.addEventListener('input',e=>{ ctrl.alphaSens=+e.target.value; if(av) av.textContent=e.target.value; }); }
+{ const am=document.getElementById('aManSl'), amv=document.getElementById('aManVal');
+  if(am) am.addEventListener('input',e=>{ ctrl.bloomPreview=+e.target.value; if(amv) amv.textContent=e.target.value; }); }
 const barsEl=document.getElementById('bars'), barEl={};
 for(const k in BANDS){ const d=document.createElement('div'); d.className='bcell';
   d.innerHTML=`<div class="bwrap"><div class="b" id="bb-${k}" style="background:${BAND_COLORS[k]}"></div></div><label><input type="checkbox" id="uc-${k}" checked>${k[0]}${k[1]}</label>`;
@@ -381,7 +386,7 @@ setInterval(()=>{
   specAGC=Math.max(specAGC*0.98, cur, 1e-6);
   const specOut=new Array(49).fill(0);
   for(let k=3;k<=45;k++) specOut[k]=Math.min(1,(specSmooth[k]||0)/specAGC);
-  bus.postMessage({ f:F, bpm, pulse, state:curState, spec:specOut, aGain: ctrl.alphaSens/50,
+  bus.postMessage({ f:F, bpm, pulse, state:curState, spec:specOut, aGain: ctrl.alphaSens/50, aManual: ctrl.bloomPreview/100,
   live: lastPacket>0 && performance.now()-lastPacket<600, map:route, story:curStory, base:baseMean }); }, 100);
 // silent keep-alive tone so the OS/browser doesn't heavily throttle this window's timers when it's
 // in the background — keeps the broadcast flowing to the Visualiser on the other screen.
