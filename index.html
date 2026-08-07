@@ -257,56 +257,83 @@ function wingPath(fore,s){ ctx.beginPath();     // right-side wing (mirror via n
     ctx.bezierCurveTo(0.0*s,0.24*s, -0.01*s,0.09*s, 0,0.03*s);
   } ctx.closePath(); }
 function drawOneButterfly(cx,cy,s,wingOpen,hueC,op){
-  // Refined iridescent butterfly: rich gradient, a soft drop shadow for depth, faint veins,
-  //  a crisp margin + edge highlight, and a SLIM tapered body. Clean, not cluttered.
+  // Beautiful iridescent butterfly: layered colour + directional light sheen + an iridescent
+  //  flash, a main vein with finer ribs, soft hindwing eyespots, crisp margin, segmented body.
   const sh=((hueC-255)+360)%360;                    // brain state nudges the whole colour ramp
-  ctx.save(); ctx.lineJoin='round';
+  ctx.save(); ctx.lineJoin='round'; ctx.lineCap='round';
   for(const fore of [false,true]){                 // hindwings behind, forewings in front
     for(const side of [-1,1]){
       ctx.save(); ctx.translate(cx,cy); ctx.scale(side*wingOpen,1);
       const bx=0.05*s, by=(fore?-0.06:0.06)*s;
-      // base fill with a soft drop shadow → depth and smooth edges
+      // (a) base iridescent fill with a soft drop shadow for depth
       ctx.save();
-      ctx.shadowColor=`hsla(${(275+sh)%360},55%,12%,${0.55*op})`; ctx.shadowBlur=s*0.14; ctx.shadowOffsetY=s*0.015;
+      ctx.shadowColor=`hsla(${(275+sh)%360},55%,10%,${0.55*op})`; ctx.shadowBlur=s*0.15; ctx.shadowOffsetY=s*0.02;
       wingPath(fore,s);
-      const g=ctx.createRadialGradient(bx,by,0,bx,by,s*1.05);
-      g.addColorStop(0.00,`hsla(${(48+sh*0.15)%360},92%,72%,${0.98*op})`);   // warm gold core
-      g.addColorStop(0.30,`hsla(${(58+sh*0.15)%360},84%,60%,${0.95*op})`);
-      g.addColorStop(0.52,`hsla(${(190+sh)%360},70%,58%,${0.95*op})`);       // cyan
-      g.addColorStop(0.72,`hsla(${(258+sh)%360},74%,55%,${0.96*op})`);       // violet
-      g.addColorStop(0.90,`hsla(${(292+sh)%360},76%,53%,${0.95*op})`);       // purple
-      g.addColorStop(1.00,`hsla(${(326+sh)%360},82%,62%,${0.9*op})`);        // rose margin
+      const g=ctx.createRadialGradient(bx,by,0,bx,by,s*1.06);
+      g.addColorStop(0.00,`hsla(${(46+sh*0.15)%360},95%,74%,${0.98*op})`);   // warm gold core
+      g.addColorStop(0.26,`hsla(${(52+sh*0.15)%360},88%,60%,${0.96*op})`);
+      g.addColorStop(0.48,`hsla(${(186+sh)%360},74%,56%,${0.96*op})`);       // cyan band
+      g.addColorStop(0.68,`hsla(${(250+sh)%360},78%,54%,${0.97*op})`);       // deep blue-violet
+      g.addColorStop(0.86,`hsla(${(288+sh)%360},80%,52%,${0.96*op})`);       // purple
+      g.addColorStop(1.00,`hsla(${(324+sh)%360},86%,60%,${0.9*op})`);        // rose margin
       ctx.fillStyle=g; ctx.fill();
       ctx.restore();
-      // interior detail, clipped to the wing
+      // interior lighting + detail, clipped to the wing
       ctx.save(); wingPath(fore,s); ctx.clip();
-      const sheen=ctx.createRadialGradient(bx-0.05*s,by,0,bx,by,s*0.62);    // luminous sheen near root
-      sheen.addColorStop(0,`hsla(52,100%,90%,${0.42*op})`); sheen.addColorStop(1,`hsla(52,100%,82%,0)`);
-      ctx.fillStyle=sheen; ctx.fillRect(-s,-1.3*s,2.5*s,2.6*s);
-      ctx.strokeStyle=`hsla(${(280+sh)%360},38%,22%,${0.15*op})`; ctx.lineWidth=Math.max(0.6,s*0.006); ctx.lineCap='round';
-      const vn=fore?4:3;                                                     // faint veins only
-      for(let i=0;i<vn;i++){ const t=(i+0.5)/vn; const ex=(fore?0.74:0.52)*s, ey=(fore?(-0.56+t*0.58):(0.12+t*0.58))*s;
+      // (b) directional light sheen (dimensionality)
+      const sheen=ctx.createLinearGradient(-0.15*s,(fore?-0.7:-0.1)*s, 0.85*s,(fore?0.15:0.85)*s);
+      sheen.addColorStop(0,`hsla(50,100%,94%,${0.32*op})`);
+      sheen.addColorStop(0.4,`hsla(190,95%,82%,${0.10*op})`);
+      sheen.addColorStop(0.75,`hsla(280,80%,60%,0)`);
+      ctx.globalCompositeOperation='screen'; ctx.fillStyle=sheen; ctx.fillRect(-s,-1.4*s,2.7*s,2.8*s);
+      // (c) iridescent flash spot (catches the light like a morpho)
+      const fx=(fore?0.32:0.24)*s, fy=(fore?-0.30:0.34)*s;
+      const fl=ctx.createRadialGradient(fx,fy,0,fx,fy,s*0.4);
+      fl.addColorStop(0,`hsla(195,100%,92%,${0.34*op})`); fl.addColorStop(1,`hsla(195,100%,92%,0)`);
+      ctx.fillStyle=fl; ctx.beginPath(); ctx.arc(fx,fy,s*0.4,0,Math.PI*2); ctx.fill();
+      ctx.globalCompositeOperation='source-over';
+      // (d) venation: a bolder main vein + finer secondary ribs
+      ctx.strokeStyle=`hsla(${(286+sh)%360},42%,18%,${0.24*op})`; ctx.lineWidth=Math.max(0.9,s*0.011);
+      const mex=(fore?0.72:0.5)*s, mey=(fore?-0.5:0.62)*s;
+      ctx.beginPath(); ctx.moveTo(bx,by); ctx.quadraticCurveTo(mex*0.5,mey*0.55,mex,mey); ctx.stroke();
+      ctx.strokeStyle=`hsla(${(286+sh)%360},38%,22%,${0.13*op})`; ctx.lineWidth=Math.max(0.5,s*0.006);
+      const vn=fore?4:3;
+      for(let i=0;i<vn;i++){ const t=(i+0.5)/vn; const ex=(fore?0.76:0.54)*s, ey=(fore?(-0.6+t*0.6):(0.08+t*0.64))*s;
         ctx.beginPath(); ctx.moveTo(bx,by); ctx.quadraticCurveTo(ex*0.5,ey*0.6,ex,ey); ctx.stroke(); }
+      // (e) soft eyespots — hindwing only, tasteful
+      if(!fore){ for(const [dx,dy] of [[0.34,0.5],[0.19,0.6]]){ const x=dx*s,y=dy*s;
+        const eg=ctx.createRadialGradient(x,y,0,x,y,s*0.055);
+        eg.addColorStop(0,`hsla(46,96%,92%,${0.55*op})`);
+        eg.addColorStop(0.5,`hsla(300,55%,18%,${0.42*op})`);
+        eg.addColorStop(1,`hsla(300,55%,18%,0)`);
+        ctx.fillStyle=eg; ctx.beginPath(); ctx.arc(x,y,s*0.055,0,Math.PI*2); ctx.fill(); } }
       ctx.restore();
-      // crisp thin margin + a bright edge highlight
-      wingPath(fore,s); ctx.strokeStyle=`hsla(${(286+sh)%360},45%,18%,${0.42*op})`; ctx.lineWidth=Math.max(1,s*0.013); ctx.stroke();
-      wingPath(fore,s); ctx.strokeStyle=`hsla(${(330+sh)%360},88%,88%,${0.24*op})`; ctx.lineWidth=Math.max(0.5,s*0.005); ctx.stroke();
+      // (f) crisp margin + bright edge highlight
+      wingPath(fore,s); ctx.strokeStyle=`hsla(${(288+sh)%360},48%,15%,${0.5*op})`; ctx.lineWidth=Math.max(1,s*0.014); ctx.stroke();
+      wingPath(fore,s); ctx.strokeStyle=`hsla(${(196+sh)%360},92%,88%,${0.3*op})`; ctx.lineWidth=Math.max(0.5,s*0.005); ctx.stroke();
       ctx.restore();
     }
   }
   // warm thorax glow where the wings meet
-  const cg=ctx.createRadialGradient(cx,cy,0,cx,cy,s*0.4);
-  cg.addColorStop(0,`hsla(66,82%,76%,${0.16*op})`); cg.addColorStop(1,`hsla(66,82%,76%,0)`);
-  ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(cx,cy,s*0.4,0,Math.PI*2); ctx.fill();
-  // slim tapered body with a soft central sheen
-  const bg=ctx.createLinearGradient(cx-s*0.032,0,cx+s*0.032,0);
-  bg.addColorStop(0,`rgba(12,12,18,${op})`); bg.addColorStop(0.42,`rgba(46,44,60,${op})`);
-  bg.addColorStop(0.56,`rgba(104,100,124,${0.95*op})`); bg.addColorStop(1,`rgba(12,12,18,${op})`);
-  ctx.fillStyle=bg; ctx.beginPath(); ctx.ellipse(cx,cy+s*0.04,s*0.032,s*0.5,0,0,Math.PI*2); ctx.fill();
+  const cg=ctx.createRadialGradient(cx,cy,0,cx,cy,s*0.42);
+  cg.addColorStop(0,`hsla(64,82%,76%,${0.16*op})`); cg.addColorStop(1,`hsla(64,82%,76%,0)`);
+  ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(cx,cy,s*0.42,0,Math.PI*2); ctx.fill();
+  // slim tapered body, segmented, with a soft central sheen
+  const bodyR=s*0.032, bTop=cy-s*0.46;
+  const bg=ctx.createLinearGradient(cx-bodyR,0,cx+bodyR,0);
+  bg.addColorStop(0,`rgba(10,10,16,${op})`); bg.addColorStop(0.4,`rgba(44,42,58,${op})`);
+  bg.addColorStop(0.55,`rgba(112,108,132,${0.95*op})`); bg.addColorStop(1,`rgba(10,10,16,${op})`);
+  ctx.fillStyle=bg; ctx.beginPath(); ctx.ellipse(cx,cy+s*0.04,bodyR,s*0.5,0,0,Math.PI*2); ctx.fill();
+  ctx.save(); ctx.beginPath(); ctx.ellipse(cx,cy+s*0.04,bodyR,s*0.5,0,0,Math.PI*2); ctx.clip();
+  ctx.strokeStyle=`rgba(8,8,14,${0.45*op})`; ctx.lineWidth=Math.max(0.6,s*0.006);
+  for(let i=0;i<8;i++){ const yy=cy-s*0.36+i*s*0.13; ctx.beginPath(); ctx.moveTo(cx-bodyR,yy); ctx.lineTo(cx+bodyR,yy); ctx.stroke(); }
+  ctx.restore();
+  // fuzzy thorax
+  ctx.fillStyle=`rgba(32,30,42,${0.55*op})`; ctx.beginPath(); ctx.ellipse(cx,cy-s*0.18,bodyR*1.5,s*0.15,0,0,Math.PI*2); ctx.fill();
   // head + delicate clubbed antennae
-  ctx.fillStyle=`rgba(18,18,26,${op})`; ctx.beginPath(); ctx.arc(cx,cy-s*0.48,s*0.05,0,Math.PI*2); ctx.fill();
-  ctx.strokeStyle=`rgba(24,24,34,${0.92*op})`; ctx.lineWidth=Math.max(1,s*0.012); ctx.lineCap='round';
-  for(const t of [-1,1]){ ctx.beginPath(); ctx.moveTo(cx,cy-s*0.52);
+  ctx.fillStyle=`rgba(18,18,26,${op})`; ctx.beginPath(); ctx.arc(cx,bTop,s*0.05,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle=`rgba(24,24,34,${0.92*op})`; ctx.lineWidth=Math.max(1,s*0.012);
+  for(const t of [-1,1]){ ctx.beginPath(); ctx.moveTo(cx,bTop-s*0.02);
     ctx.quadraticCurveTo(cx+t*s*0.14,cy-s*0.86,cx+t*s*0.20,cy-s*0.78); ctx.stroke();
     ctx.fillStyle=`rgba(24,24,34,${0.92*op})`; ctx.beginPath(); ctx.arc(cx+t*s*0.20,cy-s*0.78,s*0.022,0,Math.PI*2); ctx.fill(); }
   ctx.restore();
