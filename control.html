@@ -73,7 +73,7 @@ const BANDS = { Delta:[1,4], Theta:[4,8], Alpha:[8,13], Beta:[13,30], Gamma:[30,
 const BAND_COLORS = { Delta:'#8b5cf6', Theta:'#3b82f6', Alpha:'#22c55e', Beta:'#f59e0b', Gamma:'#ef4444' };
 const CH_COL = ['#8b5cf6','#3b82f6','#22c55e','#f59e0b'];
 const CH_NAME = ['TP9','AF7','AF8','TP10'];
-const ctrl = { avgChannels:true, plotCh:1, smooth:0.15 };
+const ctrl = { avgChannels:true, plotCh:1, smooth:0.15, sens:45 };  // sens 1..100 → band gain + noise floor
 const useBand = { Delta:true, Theta:true, Alpha:true, Beta:true, Gamma:true };
 
 const buffers = Array.from({length:CH},()=>new Float32Array(N));
@@ -216,7 +216,10 @@ mkNode('chan','Channel','#3b82f6',260,86,['s'],['s'],
 mkNode('psd','PSD · spectrum','#a855f7',500,86,['s'],['b'],
   `<canvas id="cPsd" width="188" height="86"></canvas><div style="margin-top:4px;color:#7f8aa0;">1–45 Hz, bands shaded</div>`);
 mkNode('power','PowerBands','#f59e0b',740,86,['b'],['f'],
-  `<div class="bars" id="bars"></div>`);
+  `<div class="bars" id="bars"></div>
+   <div style="margin-top:8px;color:#7f8aa0;display:flex;justify-content:space-between;font-size:11px;"><span>Sensitivity</span><span id="sensVal">45</span></div>
+   <input id="sensSl" type="range" min="1" max="100" step="1" value="45" style="width:100%">
+   <div style="color:#5b647a;font-size:9px;margin-top:2px;">low = ignore ambient noise · high = react to faint changes</div>`);
 mkNode('conn','Connectivity','#38bdf8',260,300,['s'],[],
   `<canvas id="cConn" width="120" height="120"></canvas><div style="margin-top:4px;color:#7f8aa0;">4×4 channel correlation</div>`);
 mkNode('spec','Spectrogram','#e879f9',500,300,['s'],[],
@@ -246,6 +249,8 @@ wire('chan','conn'); wire('chan','spec'); wire('feat','route'); wire('route','ou
 // body wiring
 document.getElementById('chSel').addEventListener('change',e=>{ if(e.target.value==='avg'){ctrl.avgChannels=true;} else {ctrl.avgChannels=false;ctrl.plotCh=+e.target.value;} });
 document.getElementById('smoothSl').addEventListener('input',e=>ctrl.smooth=+e.target.value);
+{ const ss=document.getElementById('sensSl'), sv=document.getElementById('sensVal');
+  if(ss) ss.addEventListener('input',e=>{ ctrl.sens=+e.target.value; if(sv) sv.textContent=e.target.value; }); }
 const barsEl=document.getElementById('bars'), barEl={};
 for(const k in BANDS){ const d=document.createElement('div'); d.className='bcell';
   d.innerHTML=`<div class="bwrap"><div class="b" id="bb-${k}" style="background:${BAND_COLORS[k]}"></div></div><label><input type="checkbox" id="uc-${k}" checked>${k[0]}${k[1]}</label>`;
@@ -312,7 +317,8 @@ function tick(){
   if(r){ for(const k in BANDS) bandVals[k]+=(r.rel[k]-bandVals[k])*ctrl.smooth;
     // RESPONSIVE bands: fixed gain on the smoothed relative power (NOT self-calibrated), so a
     // real change like eyes-closed alpha actually shows and holds instead of adapting away.
-    for(const k in BANDS) F[k]=Math.min(1, bandVals[k]*2.4);
+    const _g=0.6+(ctrl.sens/100)*4.0, _floor=(1-ctrl.sens/100)*0.07;   // sensitivity: gain + noise gate
+    for(const k in BANDS) F[k]=Math.min(1, Math.max(0, bandVals[k]-_floor)*_g);
     F.FAA=norm('FAA',r.FAA); F.TB=norm('TB',r.thetaBeta);
     pcaBuf.push([r.rel.Delta,r.rel.Theta,r.rel.Alpha,r.rel.Beta,r.rel.Gamma]); if(pcaBuf.length>160) pcaBuf.shift(); }
   const now=performance.now();

@@ -125,37 +125,46 @@ function alphaBloom(breath,scale){
 // ---- BLOOM: Apple-Breathe-style rosette of soft overlapping translucent discs.
 //  The whole flower expands on the in-breath and contracts on the out-breath;
 //  alpha swells it (eyes-closed opens the bloom); FAA warms it; Beta spins it.
-let bloomRot=0;
+let bloomRot=0, bloomPhase=0;
+// BLOOM — a "mindfulness" reading of the Alpha↔Beta balance made obvious:
+//  ALPHA (calm) opens the bloom WIDE, warm (emerald→gold), smooth and slow.
+//  BETA (active thinking) pulls it tighter and COOL (cyan→violet), with more ripple
+//  lobes and faster spin. The hue itself tells you the balance; flowing concentric
+//  contour lines give it an elegant, legible shape (not a blue blob).
 function drawBloom(breath){
-  const w=canvas.width,h=canvas.height; ctx.fillStyle='rgba(6,7,13,0.16)'; ctx.fillRect(0,0,w,h);
+  const w=canvas.width,h=canvas.height; ctx.fillStyle='rgba(6,8,14,0.20)'; ctx.fillRect(0,0,w,h);
   const cx=w/2,cy=h/2, R=Math.min(w,h);
-  const petals=6, layers=2;
-  const aEff=Math.min(1, alphaSmooth*1.8);             // display gain: the bloom opens with modest alpha
-  const disc=R*(0.12+aEff*0.14);                       // petal radius
-  const spread=disc*(0.72+breath*0.7)*(0.85+aEff*0.7);  // open at rest, opens further with alpha
-  const hueC=(196 - warm() + 360)%360;                 // teal base, FAA warms it
-  bloomRot += 0.0015 + F.Beta*0.018;
+  const a=Math.min(1,alphaSmooth*1.7), b=Math.min(1,F.Beta*1.7);
+  const bal=a/(a+b+0.001);                             // 1 = pure calm(alpha) · 0 = pure thinking(beta)
+  bloomRot   += 0.0015 + b*0.02;                       // beta agitates / spins
+  bloomPhase += 0.015 + b*0.05;
+  const openR = R*(0.15 + a*0.36)*(0.92+breath*0.12);  // ALPHA opens the bloom
+  const lobes = Math.round(5 + b*7);                   // BETA adds ripple lobes
+  const amp   = 0.03 + b*0.22;                         // BETA undulation depth
+  const hueMain = 45 + (1-bal)*235;                    // CALM 45 warm gold → THINKING 280 violet (fixed, not time-varying)
+  const rings = 6;
   ctx.globalCompositeOperation='lighter';
-  for(let L=0;L<layers;L++){
-    const orb=spread*(1-L*0.26), rr=disc*(1-L*0.14), A=(0.08+aEff*0.06+F.HRV*0.03)*(1-L*0.30);
-    for(let i=0;i<petals;i++){
-      const a=bloomRot*(L%2?-1:1)+i/petals*Math.PI*2 + L*0.5;
-      const px=cx+Math.cos(a)*orb, py=cy+Math.sin(a)*orb;
-      const hue=(hueC + i/petals*44 + L*16)%360;
-      const rg=ctx.createRadialGradient(px,py,0,px,py,rr);
-      rg.addColorStop(0,`hsla(${hue},85%,66%,${A})`);
-      rg.addColorStop(0.6,`hsla(${hue},82%,56%,${A*0.55})`);
-      rg.addColorStop(1,`hsla(${hue},80%,50%,0)`);
-      ctx.fillStyle=rg; ctx.beginPath(); ctx.arc(px,py,rr,0,Math.PI*2); ctx.fill();
-    }
+  for(let ri=rings; ri>=1; ri--){
+    const f=ri/rings, rr=openR*(0.32+0.78*f), hue=(hueMain + f*18)%360;    // gentle inner→outer shift only
+    ctx.beginPath();
+    const steps=140;
+    for(let i=0;i<=steps;i++){ const th=i/steps*Math.PI*2;
+      const u=1 + amp*Math.sin(lobes*th + bloomPhase + ri*0.5)*(0.6+0.4*Math.sin(th*2 - bloomRot));
+      const r=rr*u, x=cx+Math.cos(th+bloomRot*0.3)*r, y=cy+Math.sin(th+bloomRot*0.3)*r;
+      i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+    ctx.closePath();
+    ctx.fillStyle=`hsla(${hue},70%,52%,${(0.015+a*0.035)*(0.4+0.6*f)})`; ctx.fill();         // faint wash
+    ctx.strokeStyle=`hsla(${hue},85%,${62+bal*8}%,${0.13+a*0.24})`;                           // flowing contour
+    ctx.lineWidth=1.1+(1-bal)*1.6; ctx.stroke();
   }
-  // soft breathing core (kept subtle so petals stay distinct)
-  const core=ctx.createRadialGradient(cx,cy,0,cx,cy,disc*0.9);
-  core.addColorStop(0,`hsla(${hueC},70%,82%,${0.05+F.Alpha*0.08})`);
-  core.addColorStop(1,`hsla(${hueC},70%,66%,0)`);
-  ctx.fillStyle=core; ctx.beginPath(); ctx.arc(cx,cy,disc*0.9,0,Math.PI*2); ctx.fill();
+  // mindful core — warm & golden when calm; small, cool & dim when thinking dominates
+  const coreR=openR*0.5;
+  const core=ctx.createRadialGradient(cx,cy,0,cx,cy,coreR);
+  core.addColorStop(0,`hsla(${(48+(1-bal)*210)%360},92%,78%,${(0.06+a*0.34)*(0.35+0.65*bal)})`);
+  core.addColorStop(0.5,`hsla(${hueMain},82%,60%,${0.04+a*0.14})`);
+  core.addColorStop(1,`hsla(${hueMain},80%,55%,0)`);
+  ctx.fillStyle=core; ctx.beginPath(); ctx.arc(cx,cy,coreR,0,Math.PI*2); ctx.fill();
   ctx.globalCompositeOperation='source-over';
-  alphaBloom(breath);                                  // eyes-closed → the flower also lights the room
 }
 
 // ---- PLASMA: liquid-ink metaballs. Soft glowing blobs drift on organic paths and
@@ -237,72 +246,70 @@ function drawSpectrum2(breath){
 //   · Drift mode    (variant 'theta') → theta rises → a dreamy violet flight that drifts slowly
 //     upward on gentle sine paths, wings gliding, more of them the deeper theta goes.
 let flapPhase=0;
-function wingPath(fore,s){ ctx.beginPath();     // right-side wing outline (mirror with negative x-scale)
-  if(fore){ ctx.moveTo(0,-0.04*s);
-    ctx.bezierCurveTo(0.12*s,-0.60*s, 0.60*s,-0.66*s, 0.70*s,-0.30*s);
-    ctx.bezierCurveTo(0.78*s,-0.04*s, 0.42*s,-0.02*s, 0,-0.04*s);
-  } else { ctx.moveTo(0,0.04*s);
-    ctx.bezierCurveTo(0.34*s,0.06*s, 0.56*s,0.40*s, 0.34*s,0.64*s);
-    ctx.bezierCurveTo(0.22*s,0.78*s, 0.05*s,0.44*s, 0,0.04*s);
+function wingPath(fore,s){ ctx.beginPath();     // right-side wing (mirror via negative x-scale)
+  if(fore){ ctx.moveTo(0,-0.07*s);              // fuller, more graceful forewing
+    ctx.bezierCurveTo(0.22*s,-0.66*s, 0.64*s,-0.74*s, 0.82*s,-0.44*s);
+    ctx.bezierCurveTo(0.96*s,-0.18*s, 0.78*s,0.04*s, 0.34*s,0.02*s);
+    ctx.bezierCurveTo(0.16*s,0.0*s, 0.05*s,-0.03*s, 0,-0.07*s);
+  } else { ctx.moveTo(0,0.03*s);                // rounder hindwing
+    ctx.bezierCurveTo(0.30*s,0.05*s, 0.58*s,0.32*s, 0.54*s,0.64*s);
+    ctx.bezierCurveTo(0.50*s,0.90*s, 0.14*s,0.86*s, 0.04*s,0.46*s);
+    ctx.bezierCurveTo(0.0*s,0.24*s, -0.01*s,0.09*s, 0,0.03*s);
   } ctx.closePath(); }
 function drawOneButterfly(cx,cy,s,wingOpen,hueC,op){
-  // BEAUTIFUL iridescent butterfly (ref: gold core → violet → magenta-rose margin),
-  //  fine radiating venation, a patterned spotted border, dark shaded wing-root for depth.
-  const sh=((hueC-255)+360)%360;                    // brain state nudges the whole ramp
+  // Refined iridescent butterfly: rich gradient, a soft drop shadow for depth, faint veins,
+  //  a crisp margin + edge highlight, and a SLIM tapered body. Clean, not cluttered.
+  const sh=((hueC-255)+360)%360;                    // brain state nudges the whole colour ramp
+  ctx.save(); ctx.lineJoin='round';
   for(const fore of [false,true]){                 // hindwings behind, forewings in front
     for(const side of [-1,1]){
       ctx.save(); ctx.translate(cx,cy); ctx.scale(side*wingOpen,1);
-      const bx=0.03*s, by=(fore?-0.05:0.05)*s;
-      // 1) iridescent multi-hue fill, warm luminous core out to a rose margin
+      const bx=0.05*s, by=(fore?-0.06:0.06)*s;
+      // base fill with a soft drop shadow → depth and smooth edges
+      ctx.save();
+      ctx.shadowColor=`hsla(${(275+sh)%360},55%,12%,${0.55*op})`; ctx.shadowBlur=s*0.14; ctx.shadowOffsetY=s*0.015;
       wingPath(fore,s);
-      const g=ctx.createRadialGradient(bx,by,0,bx,by,s*1.02);
-      g.addColorStop(0.00,`hsla(${(50+sh*0.15)%360},90%,82%,${0.94*op})`);   // warm gold core
-      g.addColorStop(0.24,`hsla(${(54+sh*0.15)%360},82%,66%,${0.88*op})`);
-      g.addColorStop(0.46,`hsla(${(202+sh)%360},58%,62%,${0.84*op})`);       // cyan-lavender
-      g.addColorStop(0.68,`hsla(${(266+sh)%360},62%,57%,${0.86*op})`);       // violet
-      g.addColorStop(0.87,`hsla(${(300+sh)%360},66%,60%,${0.82*op})`);       // purple-magenta
-      g.addColorStop(1.00,`hsla(${(330+sh)%360},74%,70%,${0.58*op})`);       // rose margin
+      const g=ctx.createRadialGradient(bx,by,0,bx,by,s*1.05);
+      g.addColorStop(0.00,`hsla(${(48+sh*0.15)%360},92%,72%,${0.98*op})`);   // warm gold core
+      g.addColorStop(0.30,`hsla(${(58+sh*0.15)%360},84%,60%,${0.95*op})`);
+      g.addColorStop(0.52,`hsla(${(190+sh)%360},70%,58%,${0.95*op})`);       // cyan
+      g.addColorStop(0.72,`hsla(${(258+sh)%360},74%,55%,${0.96*op})`);       // violet
+      g.addColorStop(0.90,`hsla(${(292+sh)%360},76%,53%,${0.95*op})`);       // purple
+      g.addColorStop(1.00,`hsla(${(326+sh)%360},82%,62%,${0.9*op})`);        // rose margin
       ctx.fillStyle=g; ctx.fill();
-      // 2) depth: dark shading pooled at the wing root near the body
-      wingPath(fore,s);
-      const dk=ctx.createRadialGradient(bx,by,0,bx,by,s*0.52);
-      dk.addColorStop(0,`hsla(245,45%,8%,${0.6*op})`); dk.addColorStop(1,`hsla(245,45%,8%,0)`);
-      ctx.fillStyle=dk; ctx.fill();
-      // 3) venation + margin spots, clipped to the wing
-      ctx.save(); wingPath(fore,s); ctx.clip();
-      ctx.strokeStyle=`hsla(285,38%,12%,${0.32*op})`; ctx.lineWidth=Math.max(0.6,s*0.008); ctx.lineCap='round';
-      const vn=fore?6:5;
-      for(let i=0;i<vn;i++){ const t=(i+0.5)/vn;
-        const ex=(fore?0.70:0.50)*s, ey=(fore?(-0.62+t*0.66):(0.06+t*0.66))*s;
-        ctx.beginPath(); ctx.moveTo(bx,by); ctx.quadraticCurveTo(ex*0.42,ey*0.72,ex,ey); ctx.stroke(); }
-      // dark marginal band (patterned border)
-      wingPath(fore,s); ctx.strokeStyle=`hsla(290,35%,10%,${0.4*op})`; ctx.lineWidth=s*0.06; ctx.stroke();
-      // small pale-cored spots set into that border
-      const spots=fore?[[0.56,-0.44],[0.63,-0.30],[0.61,-0.16]]:[[0.42,0.52],[0.29,0.62],[0.15,0.64]];
-      for(const [dx,dy] of spots){ const x=dx*s,y=dy*s;
-        ctx.fillStyle=`hsla(288,45%,9%,${0.55*op})`; ctx.beginPath(); ctx.arc(x,y,s*0.026,0,Math.PI*2); ctx.fill();
-        ctx.fillStyle=`hsla(46,92%,90%,${0.7*op})`; ctx.beginPath(); ctx.arc(x,y,s*0.011,0,Math.PI*2); ctx.fill(); }
       ctx.restore();
-      // 4) luminous edge highlight
-      wingPath(fore,s);
-      ctx.strokeStyle=`hsla(${(328+sh)%360},82%,84%,${0.3*op})`; ctx.lineWidth=Math.max(1,s*0.012); ctx.stroke();
+      // interior detail, clipped to the wing
+      ctx.save(); wingPath(fore,s); ctx.clip();
+      const sheen=ctx.createRadialGradient(bx-0.05*s,by,0,bx,by,s*0.62);    // luminous sheen near root
+      sheen.addColorStop(0,`hsla(52,100%,90%,${0.42*op})`); sheen.addColorStop(1,`hsla(52,100%,82%,0)`);
+      ctx.fillStyle=sheen; ctx.fillRect(-s,-1.3*s,2.5*s,2.6*s);
+      ctx.strokeStyle=`hsla(${(280+sh)%360},38%,22%,${0.15*op})`; ctx.lineWidth=Math.max(0.6,s*0.006); ctx.lineCap='round';
+      const vn=fore?4:3;                                                     // faint veins only
+      for(let i=0;i<vn;i++){ const t=(i+0.5)/vn; const ex=(fore?0.74:0.52)*s, ey=(fore?(-0.56+t*0.58):(0.12+t*0.58))*s;
+        ctx.beginPath(); ctx.moveTo(bx,by); ctx.quadraticCurveTo(ex*0.5,ey*0.6,ex,ey); ctx.stroke(); }
+      ctx.restore();
+      // crisp thin margin + a bright edge highlight
+      wingPath(fore,s); ctx.strokeStyle=`hsla(${(286+sh)%360},45%,18%,${0.42*op})`; ctx.lineWidth=Math.max(1,s*0.013); ctx.stroke();
+      wingPath(fore,s); ctx.strokeStyle=`hsla(${(330+sh)%360},88%,88%,${0.24*op})`; ctx.lineWidth=Math.max(0.5,s*0.005); ctx.stroke();
       ctx.restore();
     }
   }
-  // soft greenish-gold glow where the wings meet (as in the reference thorax)
-  const cg=ctx.createRadialGradient(cx,cy,0,cx,cy,s*0.5);
-  cg.addColorStop(0,`hsla(80,70%,72%,${0.22*op})`); cg.addColorStop(1,`hsla(80,70%,72%,0)`);
-  ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(cx,cy,s*0.5,0,Math.PI*2); ctx.fill();
-  // furred body with a soft sheen, head, delicate clubbed antennae
-  const bg=ctx.createLinearGradient(cx-s*0.055,0,cx+s*0.055,0);
-  bg.addColorStop(0,`rgba(10,10,16,${op})`); bg.addColorStop(0.45,`rgba(52,50,66,${op})`);
-  bg.addColorStop(0.58,`rgba(84,80,100,${0.92*op})`); bg.addColorStop(1,`rgba(10,10,16,${op})`);
-  ctx.fillStyle=bg; ctx.beginPath(); ctx.ellipse(cx,cy+s*0.02,s*0.05,s*0.62,0,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle=`rgba(16,16,24,${op})`; ctx.beginPath(); ctx.arc(cx,cy-s*0.6,s*0.066,0,Math.PI*2); ctx.fill();
-  ctx.strokeStyle=`rgba(22,22,32,${0.9*op})`; ctx.lineWidth=Math.max(1,s*0.013); ctx.lineCap='round';
-  for(const t of [-1,1]){ ctx.beginPath(); ctx.moveTo(cx,cy-s*0.64);
-    ctx.quadraticCurveTo(cx+t*s*0.15,cy-s*0.93,cx+t*s*0.22,cy-s*0.84); ctx.stroke();
-    ctx.fillStyle=`rgba(22,22,32,${0.9*op})`; ctx.beginPath(); ctx.arc(cx+t*s*0.22,cy-s*0.84,s*0.024,0,Math.PI*2); ctx.fill(); }
+  // warm thorax glow where the wings meet
+  const cg=ctx.createRadialGradient(cx,cy,0,cx,cy,s*0.4);
+  cg.addColorStop(0,`hsla(66,82%,76%,${0.16*op})`); cg.addColorStop(1,`hsla(66,82%,76%,0)`);
+  ctx.fillStyle=cg; ctx.beginPath(); ctx.arc(cx,cy,s*0.4,0,Math.PI*2); ctx.fill();
+  // slim tapered body with a soft central sheen
+  const bg=ctx.createLinearGradient(cx-s*0.032,0,cx+s*0.032,0);
+  bg.addColorStop(0,`rgba(12,12,18,${op})`); bg.addColorStop(0.42,`rgba(46,44,60,${op})`);
+  bg.addColorStop(0.56,`rgba(104,100,124,${0.95*op})`); bg.addColorStop(1,`rgba(12,12,18,${op})`);
+  ctx.fillStyle=bg; ctx.beginPath(); ctx.ellipse(cx,cy+s*0.04,s*0.032,s*0.5,0,0,Math.PI*2); ctx.fill();
+  // head + delicate clubbed antennae
+  ctx.fillStyle=`rgba(18,18,26,${op})`; ctx.beginPath(); ctx.arc(cx,cy-s*0.48,s*0.05,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle=`rgba(24,24,34,${0.92*op})`; ctx.lineWidth=Math.max(1,s*0.012); ctx.lineCap='round';
+  for(const t of [-1,1]){ ctx.beginPath(); ctx.moveTo(cx,cy-s*0.52);
+    ctx.quadraticCurveTo(cx+t*s*0.14,cy-s*0.86,cx+t*s*0.20,cy-s*0.78); ctx.stroke();
+    ctx.fillStyle=`rgba(24,24,34,${0.92*op})`; ctx.beginPath(); ctx.arc(cx+t*s*0.20,cy-s*0.78,s*0.022,0,Math.PI*2); ctx.fill(); }
+  ctx.restore();
 }
 function drawFlower(cx,by,fs){
   // ELEGANT soft bloom: translucent layered petals with radial falloff, a glowing
@@ -445,7 +452,7 @@ const statusEl=document.getElementById('status'), bpmEl=document.getElementById(
       heartGlyph=document.querySelector('#heart .hh'), waitEl=document.getElementById('wait'),
       alphaFill=document.getElementById('alphaFill'), eyesEl=document.getElementById('eyes'),
       captionEl=document.getElementById('caption');
-const CAPTION={ bloom:'Close your eyes — alpha opens the bloom',
+const CAPTION={ bloom:'Calm (alpha) opens a warm bloom · thinking (beta) tightens it cool',
   plasma:'Liquid ink · Alpha swells it · Beta quickens the flow',
   spectrum:'Your live 3–45 Hz spectrum · color = frequency · green ring = alpha',
   butterfly:'Calm holds the wings still · arousal flaps them & summons an energetic flock',
