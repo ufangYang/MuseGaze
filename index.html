@@ -126,43 +126,50 @@ function alphaBloom(breath,scale){
 //  The whole flower expands on the in-breath and contracts on the out-breath;
 //  alpha swells it (eyes-closed opens the bloom); FAA warms it; Beta spins it.
 let bloomRot=0, bloomPhase=0;
-// BLOOM — a "mindfulness" reading of the Alpha↔Beta balance made obvious:
-//  ALPHA (calm) opens the bloom WIDE, warm (emerald→gold), smooth and slow.
-//  BETA (active thinking) pulls it tighter and COOL (cyan→violet), with more ripple
-//  lobes and faster spin. The hue itself tells you the balance; flowing concentric
-//  contour lines give it an elegant, legible shape (not a blue blob).
+// BLOOM — Apple-Breathe aesthetic: a rosette of soft, frosted, overlapping translucent
+//  petals with gentle depth and slow motion. Still reads the Alpha↔Beta balance:
+//  CALM (alpha) → petals open WIDE, warm mint→gold, few & large, serene & slow.
+//  THINKING (beta) → petals draw in, cooler periwinkle→lavender, a few more, quicker.
+//  Soft radial gradients + shadowBlur give the misty, luminous Apple feel (no hard lines).
 function drawBloom(breath){
-  const w=canvas.width,h=canvas.height; ctx.fillStyle='rgba(6,8,14,0.20)'; ctx.fillRect(0,0,w,h);
+  const w=canvas.width,h=canvas.height;
+  // soft graded backdrop for depth (very Apple)
+  const bgv=ctx.createRadialGradient(w/2,h*0.44,0,w/2,h*0.44,Math.max(w,h)*0.8);
+  bgv.addColorStop(0,'rgba(12,16,24,0.30)'); bgv.addColorStop(1,'rgba(4,5,9,0.34)');
+  ctx.fillStyle=bgv; ctx.fillRect(0,0,w,h);
   const cx=w/2,cy=h/2, R=Math.min(w,h);
   const a=Math.min(1,alphaSmooth*1.7), b=Math.min(1,F.Beta*1.7);
-  const bal=a/(a+b+0.001);                             // 1 = pure calm(alpha) · 0 = pure thinking(beta)
-  bloomRot   += 0.0015 + b*0.02;                       // beta agitates / spins
-  bloomPhase += 0.015 + b*0.05;
-  const openR = R*(0.15 + a*0.36)*(0.92+breath*0.12);  // ALPHA opens the bloom
-  const lobes = Math.round(5 + b*7);                   // BETA adds ripple lobes
-  const amp   = 0.03 + b*0.22;                         // BETA undulation depth
-  const hueMain = 45 + (1-bal)*235;                    // CALM 45 warm gold → THINKING 280 violet (fixed, not time-varying)
-  const rings = 6;
-  ctx.globalCompositeOperation='lighter';
-  for(let ri=rings; ri>=1; ri--){
-    const f=ri/rings, rr=openR*(0.32+0.78*f), hue=(hueMain + f*18)%360;    // gentle inner→outer shift only
-    ctx.beginPath();
-    const steps=140;
-    for(let i=0;i<=steps;i++){ const th=i/steps*Math.PI*2;
-      const u=1 + amp*Math.sin(lobes*th + bloomPhase + ri*0.5)*(0.6+0.4*Math.sin(th*2 - bloomRot));
-      const r=rr*u, x=cx+Math.cos(th+bloomRot*0.3)*r, y=cy+Math.sin(th+bloomRot*0.3)*r;
-      i?ctx.lineTo(x,y):ctx.moveTo(x,y); }
-    ctx.closePath();
-    ctx.fillStyle=`hsla(${hue},70%,52%,${(0.015+a*0.035)*(0.4+0.6*f)})`; ctx.fill();         // faint wash
-    ctx.strokeStyle=`hsla(${hue},85%,${62+bal*8}%,${0.13+a*0.24})`;                           // flowing contour
-    ctx.lineWidth=1.1+(1-bal)*1.6; ctx.stroke();
+  const bal=a/(a+b+0.001);                             // 1 = calm(alpha) · 0 = thinking(beta)
+  bloomRot   += 0.0016 + b*0.011;                      // calm drifts slowly; thinking turns a little quicker
+  const breathe = 0.93 + breath*0.13;
+  const open    = R*(0.115 + a*0.13);                  // ring radius — ALPHA opens the rosette
+  const petalR  = R*(0.135 + a*0.05)*breathe;          // soft petal radius (kept < ring so petals read)
+  const petals  = Math.round(6 + (1-bal)*3);           // THINKING adds a couple of petals
+  const hue     = 48 + (1-bal)*200;                    // CALM warm gold/amber → THINKING periwinkle
+  ctx.globalCompositeOperation='source-over';          // translucent petals — pastel overlaps, no white blow-out
+  for(let L=0; L<2; L++){                              // two layers → soft depth
+    const lr=open*(1-L*0.30), pr=petalR*(1-L*0.14), rot=bloomRot*(L%2?-1:1);
+    for(let i=0;i<petals;i++){
+      const ang=rot + i/petals*Math.PI*2 + L*0.5;
+      const px=cx+Math.cos(ang)*lr, py=cy+Math.sin(ang)*lr;
+      const ph=(hue - 18 + i/petals*44 + L*6 +360)%360, A=(0.22+a*0.14)*(1-L*0.34);
+      ctx.save();
+      ctx.shadowColor=`hsla(${ph},72%,58%,0.5)`; ctx.shadowBlur=pr*0.5;      // soft frosted glow
+      const rg=ctx.createRadialGradient(px,py,0,px,py,pr);
+      rg.addColorStop(0,`hsla(${ph},72%,72%,${A})`);
+      rg.addColorStop(0.6,`hsla(${ph},66%,60%,${A*0.55})`);
+      rg.addColorStop(1,`hsla(${ph},64%,54%,0)`);
+      ctx.fillStyle=rg; ctx.beginPath(); ctx.arc(px,py,pr,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+    }
   }
-  // mindful core — warm & golden when calm; small, cool & dim when thinking dominates
-  const coreR=openR*0.5;
+  // gentle luminous core — warm gold when calm, cool lavender when thinking (soft, not blown out)
+  const coreR=petalR*0.8, coreHue=(50+(1-bal)*190)%360;
+  ctx.globalCompositeOperation='lighter';
   const core=ctx.createRadialGradient(cx,cy,0,cx,cy,coreR);
-  core.addColorStop(0,`hsla(${(48+(1-bal)*210)%360},92%,78%,${(0.06+a*0.34)*(0.35+0.65*bal)})`);
-  core.addColorStop(0.5,`hsla(${hueMain},82%,60%,${0.04+a*0.14})`);
-  core.addColorStop(1,`hsla(${hueMain},80%,55%,0)`);
+  core.addColorStop(0,`hsla(${coreHue},82%,80%,${(0.06+a*0.18)*(0.5+0.5*bal)})`);
+  core.addColorStop(0.55,`hsla(${hue},68%,64%,${0.04+a*0.08})`);
+  core.addColorStop(1,`hsla(${hue},66%,58%,0)`);
   ctx.fillStyle=core; ctx.beginPath(); ctx.arc(cx,cy,coreR,0,Math.PI*2); ctx.fill();
   ctx.globalCompositeOperation='source-over';
 }
