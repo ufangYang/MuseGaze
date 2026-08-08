@@ -73,14 +73,30 @@ const BANDS = { Delta:[1,4], Theta:[4,8], Alpha:[8,13], Beta:[13,30], Gamma:[30,
 const BAND_COLORS = { Delta:'#8b5cf6', Theta:'#3b82f6', Alpha:'#22c55e', Beta:'#f59e0b', Gamma:'#ef4444' };
 const CH_COL = ['#8b5cf6','#3b82f6','#22c55e','#f59e0b'];
 const CH_NAME = ['TP9','AF7','AF8','TP10'];
-const ctrl = { avgChannels:true, plotCh:1, smooth:0.15, sens:45, alphaSens:50, bloomPreview:0, rThresh:65 };  // rThresh: alpha % needed to earn the rainbow
+const ctrl = { avgChannels:true, plotCh:1, smooth:0.15, sens:45, alphaSens:50, bloomPreview:0, rThresh:65, hpHz:1 };  // hpHz: high-pass cutoff for Plasma waves
 const useBand = { Delta:true, Theta:true, Alpha:true, Beta:true, Gamma:true };
 
 const buffers = Array.from({length:CH},()=>new Float32Array(N));
 let writePos=0, filled=0, lastPacket=0;
+// --- streaming biquad filters (RBJ cookbook) for the Plasma waveform view ---
+function biquadBP(f0,Q){ const w0=2*Math.PI*f0/FS,cw=Math.cos(w0),al=Math.sin(w0)/(2*Q),a0=1+al;
+  return {b0:al/a0,b1:0,b2:-al/a0,a1:-2*cw/a0,a2:(1-al)/a0,z1:0,z2:0}; }              // band-pass, 0 dB peak
+function biquadHP(f0,Q){ const w0=2*Math.PI*f0/FS,cw=Math.cos(w0),al=Math.sin(w0)/(2*Q),a0=1+al;
+  return {b0:(1+cw)/2/a0,b1:-(1+cw)/a0,b2:(1+cw)/2/a0,a1:-2*cw/a0,a2:(1-al)/a0,z1:0,z2:0}; }  // high-pass
+function biquadRun(f,x){ const y=f.b0*x+f.z1; f.z1=f.b1*x-f.a1*y+f.z2; f.z2=f.b2*x-f.a2*y; return y; }  // DF-II transposed
+const WBANDS=['Delta','Theta','Alpha','Beta','Gamma'];
+let hpFilt=biquadHP(ctrl.hpHz,0.707);
+const bpFilt={}; for(const k of WBANDS){ const lo=BANDS[k][0],hi=BANDS[k][1],f0=Math.sqrt(lo*hi),Q=Math.max(0.7,f0/(hi-lo)); bpFilt[k]=biquadBP(f0,Q); }
+const waveAcc={Delta:[],Theta:[],Alpha:[],Beta:[],Gamma:[],bb:[]};
 function onReading(r){ if(r.electrode>3) return; lastPacket=performance.now();
   for(let i=0;i<r.samples.length;i++) buffers[r.electrode][(writePos+i)%N]=r.samples[i];
-  if(r.electrode===3){ writePos=(writePos+r.samples.length)%N; filled=Math.min(N,filled+r.samples.length); } }
+  if(r.electrode===3){ const L=r.samples.length;
+    for(let i=0;i<L;i++){ const p=(writePos+i)%N;                                     // avg the 4 channels, filter each new sample
+      const avg=(buffers[0][p]+buffers[1][p]+buffers[2][p]+buffers[3][p])*0.25;
+      const hp=biquadRun(hpFilt,avg); waveAcc.bb.push(hp);
+      for(const k of WBANDS) waveAcc[k].push(biquadRun(bpFilt[k],hp)); }
+    for(const k in waveAcc){ if(waveAcc[k].length>128) waveAcc[k]=waveAcc[k].slice(-128); }
+    writePos=(writePos+L)%N; filled=Math.min(N,filled+L); } }
 function fft(re,im){ const n=re.length;
   for(let i=1,j=0;i<n;i++){ let bit=n>>1; for(;j&bit;bit>>=1)j^=bit; j^=bit;
     if(i<j){const tr=re[i];re[i]=re[j];re[j]=tr;const ti=im[i];im[i]=im[j];im[j]=ti;} }
@@ -214,7 +230,10 @@ mkNode('chan','Channel','#3b82f6',260,86,['s'],['s'],
   `<select id="chSel"><option value="avg">Average (all 4)</option><option value="0">TP9 · left ear</option><option value="1">AF7 · left brow</option><option value="2">AF8 · right brow</option><option value="3">TP10 · right ear</option></select>
    <div style="margin-top:6px;color:#7f8aa0;">Smooth</div><input id="smoothSl" type="range" min="0.02" max="0.5" step="0.01" value="0.15" style="width:100%">`);
 mkNode('psd','PSD · spectrum','#a855f7',500,86,['s'],['b'],
-  `<canvas id="cPsd" width="188" height="86"></canvas><div style="margin-top:4px;color:#7f8aa0;">1–45 Hz, bands shaded</div>`);
+  `<canvas id="cPsd" width="188" height="86"></canvas><div style="margin-top:4px;color:#7f8aa0;">1–45 Hz, bands shaded</div>
+   <div style="margin-top:6px;color:#7f8aa0;display:flex;justify-content:space-between;font-size:11px;"><span>High-pass</span><span><span id="hpVal">1.0</span> Hz</span></div>
+   <input id="hpSl" type="range" min="0.1" max="10" step="0.1" value="1" style="width:100%">
+   <div style="color:#5b647a;font-size:9px;margin-top:2px;">removes slow drift below cutoff → feeds Plasma waveforms</div>`);
 mkNode('power','PowerBands','#f59e0b',740,86,['b'],['f'],
   `<div class="bars" id="bars"></div>
    <div style="margin-top:8px;color:#7f8aa0;display:flex;justify-content:space-between;font-size:11px;"><span>Sensitivity</span><span id="sensVal">45</span></div>
@@ -266,6 +285,8 @@ document.getElementById('smoothSl').addEventListener('input',e=>ctrl.smooth=+e.t
   if(am) am.addEventListener('input',e=>{ ctrl.bloomPreview=+e.target.value; if(amv) amv.textContent=e.target.value; }); }
 { const rt=document.getElementById('rThSl'), rtv=document.getElementById('rThVal');
   if(rt) rt.addEventListener('input',e=>{ ctrl.rThresh=+e.target.value; if(rtv) rtv.textContent=e.target.value; }); }
+{ const hp=document.getElementById('hpSl'), hv=document.getElementById('hpVal');
+  if(hp) hp.addEventListener('input',e=>{ ctrl.hpHz=+e.target.value; if(hv) hv.textContent=(+e.target.value).toFixed(1); hpFilt=biquadHP(ctrl.hpHz,0.707); }); }
 const barsEl=document.getElementById('bars'), barEl={};
 for(const k in BANDS){ const d=document.createElement('div'); d.className='bcell';
   d.innerHTML=`<div class="bwrap"><div class="b" id="bb-${k}" style="background:${BAND_COLORS[k]}"></div></div><label><input type="checkbox" id="uc-${k}" checked>${k[0]}${k[1]}</label>`;
@@ -391,7 +412,8 @@ setInterval(()=>{
   specAGC=Math.max(specAGC*0.98, cur, 1e-6);
   const specOut=new Array(49).fill(0);
   for(let k=3;k<=45;k++) specOut[k]=Math.min(1,(specSmooth[k]||0)/specAGC);
-  bus.postMessage({ f:F, bpm, pulse, state:curState, spec:specOut, aGain: ctrl.alphaSens/50, aManual: ctrl.bloomPreview/100, rThresh: ctrl.rThresh/100,
+  const wavesOut={}; for(const k in waveAcc){ wavesOut[k]=waveAcc[k].slice(); waveAcc[k].length=0; }   // send & clear filtered samples
+  bus.postMessage({ f:F, bpm, pulse, state:curState, spec:specOut, aGain: ctrl.alphaSens/50, aManual: ctrl.bloomPreview/100, rThresh: ctrl.rThresh/100, waves: wavesOut, hpHz: ctrl.hpHz,
   live: lastPacket>0 && performance.now()-lastPacket<600, map:route, story:curStory, base:baseMean }); }, 100);
 // silent keep-alive tone so the OS/browser doesn't heavily throttle this window's timers when it's
 // in the background — keeps the broadcast flowing to the Visualiser on the other screen.

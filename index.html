@@ -86,6 +86,12 @@ const Ftarget = { ...F };
 let bpm=0, pulse=0, lastRx=-1e9, curState='Neutral', aGain=1, aManual=0, rThresh=0.65;  // rThresh: alpha level needed to earn the rainbow
 let specTarget=new Array(49).fill(0), specDisp=new Array(49).fill(0);
 let route={ size:'Alpha', speed:'Beta', ripple:'Theta', warmth:'FAA', glow:'HRV' };
+// --- Plasma EEG-view state: per-band waveforms (from Control's filters) + band-power trends ---
+const WBANDS=['Delta','Theta','Alpha','Beta','Gamma'];
+const waveBuf={Delta:[],Theta:[],Alpha:[],Beta:[],Gamma:[],bb:[]}; const WAVE_MAX=1200;   // ~5s of samples
+const trend={Delta:[],Theta:[],Alpha:[],Beta:[],Gamma:[],avg:[]}; const TREND_MAX=600;     // ~60s at 10Hz
+const ga1s=[]; const GA_MAX=120; let gaSum=0,gaCnt=0,gaT=0;                                  // grand average, 1 point / second
+let hpHz=1, plasmaView='waves', tgl={x:0,y:0,w:0,h:0};
 bus.onmessage = (e) => { const m=e.data; if(!m||!m.f) return;
   for (const k in m.f) if (typeof m.f[k]==='number') Ftarget[k]=m.f[k];
   if (m.map) route=m.map;
@@ -94,6 +100,11 @@ bus.onmessage = (e) => { const m=e.data; if(!m||!m.f) return;
   if (typeof m.aGain==='number') aGain=m.aGain;
   if (typeof m.aManual==='number') aManual=m.aManual;
   if (typeof m.rThresh==='number') rThresh=m.rThresh;
+  if (typeof m.hpHz==='number') hpHz=m.hpHz;
+  if (m.waves){ for(const k in waveBuf){ const a=m.waves[k]; if(a&&a.length){ const b=waveBuf[k]; for(let i=0;i<a.length;i++) b.push(a[i]); if(b.length>WAVE_MAX) waveBuf[k]=b.slice(-WAVE_MAX); } } }
+  { let s=0; for(const k of WBANDS){ const v=(m.f&&typeof m.f[k]==='number')?m.f[k]:0; const tb=trend[k]; tb.push(v); if(tb.length>TREND_MAX) tb.shift(); s+=v; }
+    const mb=s/5; trend.avg.push(mb); if(trend.avg.length>TREND_MAX) trend.avg.shift();
+    gaSum+=mb; gaCnt++; const now=performance.now(); if(now-gaT>=1000){ ga1s.push(gaCnt?gaSum/gaCnt:0); if(ga1s.length>GA_MAX) ga1s.shift(); gaSum=0; gaCnt=0; gaT=now; } }
   bpm=m.bpm||0; if(m.pulse>pulse) pulse=m.pulse; lastRx=performance.now(); };
 function easeSignals(){ for(const k in F) F[k]+=((Ftarget[k]??F[k])-F[k])*0.14;
   for(let k=0;k<49;k++) specDisp[k]+=((specTarget[k]||0)-specDisp[k])*0.18; }
@@ -229,24 +240,54 @@ function initPlasma(){ plasmaBlobs=[];
     ax:0.32+0.14*((i*0.37)%1), ay:0.32+0.14*((i*0.61)%1),
     px:i*0.9, py:i*1.7+1, hue:PLASMA_HUES[i%PLASMA_HUES.length] }); }
 function initAurora(){ initPlasma(); }                 // (resize hook keeps the old name)
+function rrect(x,y,wd,ht,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+wd,y,x+wd,y+ht,r); ctx.arcTo(x+wd,y+ht,x,y+ht,r); ctx.arcTo(x,y+ht,x,y,r); ctx.arcTo(x,y,x+wd,y,r); ctx.closePath(); }
+// PLASMA (repurposed): live EEG per frequency band. Toggle between real band-pass WAVEFORMS
+//  (filtered in Control) and band-POWER TRENDS over ~60s, plus a grand average (1 point/second).
 function drawPlasma(breath){
   const w=canvas.width,h=canvas.height;
-  if(!plasmaBlobs.length) initPlasma();
-  ctx.globalCompositeOperation='source-over'; ctx.fillStyle='rgba(3,3,8,0.20)'; ctx.fillRect(0,0,w,h);  // dark water + inky trail
-  plasmaT += 0.006 + F.Beta*0.022;
-  ctx.globalCompositeOperation='lighter';
-  const R=Math.max(w,h);
-  for(let i=0;i<plasmaBlobs.length;i++){ const b=plasmaBlobs[i];
-    const x=w*(0.5 + b.ax*Math.sin(plasmaT*b.sx + b.px));
-    const y=h*(0.5 + b.ay*Math.sin(plasmaT*b.sy + b.py));
-    const rad=R*(0.14+F.Alpha*0.14+0.05*Math.sin(plasmaT*1.3+i))*(0.82+breath*0.3);
-    const hue=(b.hue - warm()+360)%360, inten=0.075+F.Alpha*0.06;      // dim so blobs read as ink, not white light
-    const rg=ctx.createRadialGradient(x,y,0,x,y,rad);
-    rg.addColorStop(0,`hsla(${hue},95%,58%,${inten})`);
-    rg.addColorStop(0.45,`hsla(${hue},88%,48%,${inten*0.45})`);
-    rg.addColorStop(1,`hsla(${hue},85%,42%,0)`);
-    ctx.fillStyle=rg; ctx.beginPath(); ctx.arc(x,y,rad,0,Math.PI*2); ctx.fill(); }
-  ctx.globalCompositeOperation='source-over';                          // no green bloom here — plasma is its own alpha response
+  ctx.globalCompositeOperation='source-over';
+  const bg=ctx.createLinearGradient(0,0,0,h); bg.addColorStop(0,'#06080f'); bg.addColorStop(1,'#03040a');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,w,h);
+  const COL={Delta:'#8b5cf6',Theta:'#3b82f6',Alpha:'#22c55e',Beta:'#f59e0b',Gamma:'#ef4444'};
+  const RNG={Delta:'1–4',Theta:'4–8',Alpha:'8–13',Beta:'13–30',Gamma:'30–44'};
+  const pad=Math.round(w*0.03), top=Math.round(h*0.15), grandH=Math.round(h*0.12), bottomM=Math.round(h*0.06);
+  const areaH=h-top-grandH-bottomM, laneH=areaH/5, plotX=pad+Math.round(w*0.1), plotW=w-plotX-pad;
+  ctx.lineJoin='round'; ctx.lineCap='round';
+  for(let i=0;i<WBANDS.length;i++){ const k=WBANDS[i], yc=top+laneH*(i+0.5), col=COL[k];
+    ctx.strokeStyle='rgba(255,255,255,0.05)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(plotX,yc); ctx.lineTo(plotX+plotW,yc); ctx.stroke();
+    ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    ctx.fillStyle=col; ctx.font=`600 ${Math.round(h*0.024)}px system-ui,sans-serif`; ctx.fillText(k, pad, yc-Math.round(h*0.006));
+    ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font=`${Math.round(h*0.015)}px system-ui,sans-serif`; ctx.fillText(RNG[k]+' Hz', pad, yc+Math.round(h*0.016));
+    if(plasmaView==='waves'){ const buf=waveBuf[k];
+      if(buf.length>2){ let mx=1e-6; for(let j=0;j<buf.length;j++){ const av=Math.abs(buf[j]); if(av>mx)mx=av; } const sc=(laneH*0.42)/mx;
+        ctx.strokeStyle=col; ctx.lineWidth=Math.max(1.4,h*0.0022); ctx.shadowColor=col; ctx.shadowBlur=h*0.008; ctx.beginPath();
+        const n=buf.length; for(let j=0;j<n;j++){ const x=plotX+plotW*(j/(n-1)); const y=yc-buf[j]*sc; j?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+        ctx.stroke(); ctx.shadowBlur=0; }
+    } else { const buf=trend[k];
+      if(buf.length>1){ const base=yc+laneH*0.42, n=buf.length;
+        ctx.beginPath();
+        for(let j=0;j<n;j++){ const x=plotX+plotW*(j/(TREND_MAX-1)); const y=base-Math.min(1,buf[j])*laneH*0.84; j?ctx.lineTo(x,y):ctx.moveTo(x,y); }
+        ctx.strokeStyle=col; ctx.lineWidth=Math.max(1.4,h*0.0022); ctx.stroke();
+        ctx.lineTo(plotX+plotW*((n-1)/(TREND_MAX-1)),base); ctx.lineTo(plotX,base); ctx.closePath(); ctx.fillStyle=col+'22'; ctx.fill(); }
+    }
+  }
+  const gy=top+areaH+grandH*0.55;                                       // grand-average lane (per 1 s)
+  ctx.strokeStyle='rgba(255,255,255,0.05)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(plotX,gy); ctx.lineTo(plotX+plotW,gy); ctx.stroke();
+  ctx.textAlign='left'; ctx.fillStyle='#e8ecf3'; ctx.font=`600 ${Math.round(h*0.022)}px system-ui,sans-serif`; ctx.fillText('Grand avg', pad, gy-Math.round(h*0.006));
+  ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font=`${Math.round(h*0.015)}px system-ui,sans-serif`; ctx.fillText('per 1 s', pad, gy+Math.round(h*0.016));
+  if(ga1s.length>1){ let mx=1e-6; for(const v of ga1s) if(v>mx)mx=v; const sc=(grandH*0.36)/mx, bw=plotW/GA_MAX;
+    for(let j=0;j<ga1s.length;j++){ const x=plotX+plotW*(j/(GA_MAX-1)); const bh=ga1s[j]*sc; const hue=205-150*(ga1s[j]/mx);
+      ctx.fillStyle=`hsl(${hue},72%,56%)`; ctx.fillRect(x-bw*0.3, gy-bh, Math.max(1.5,bw*0.6), bh); } }
+  // toggle pill + high-pass readout
+  const tw=Math.round(w*0.19), th=Math.round(h*0.05); tgl={x:pad,y:Math.round(h*0.075),w:tw,h:th}; const half=tw/2;
+  ctx.fillStyle='rgba(255,255,255,0.07)'; rrect(tgl.x,tgl.y,tw,th,th*0.45); ctx.fill();
+  ctx.fillStyle='rgba(90,130,255,0.55)'; rrect(plasmaView==='waves'?tgl.x:tgl.x+half,tgl.y,half,th,th*0.45); ctx.fill();
+  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font=`600 ${Math.round(h*0.019)}px system-ui,sans-serif`;
+  ctx.fillStyle=plasmaView==='waves'?'#fff':'rgba(255,255,255,0.6)'; ctx.fillText('Waves', tgl.x+half*0.5, tgl.y+th*0.5);
+  ctx.fillStyle=plasmaView==='trends'?'#fff':'rgba(255,255,255,0.6)'; ctx.fillText('Trends', tgl.x+half*1.5, tgl.y+th*0.5);
+  ctx.textAlign='right'; ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.font=`${Math.round(h*0.018)}px system-ui,sans-serif`;
+  ctx.fillText('High-pass '+(hpHz||0).toFixed(1)+' Hz', w-pad, tgl.y+th*0.5);
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
 }
 
 // ---- SPECTRUM: the live 3–45 Hz spectrum as a FILLED rainbow corona (color = the
@@ -524,13 +565,16 @@ modeBox.addEventListener('click', e => { const btn=e.target.closest('button'); i
   if(mode==='plasma') initPlasma();
   swarm=[]; spawnAcc=0;                                          // fresh flock per mode (gamma↔theta differ)
   const sc=(mode==='scenes'); showSceneLayers(sc); if(sc) lastSceneT=-1e9; });
+canvas.addEventListener('click', e=>{ if(mode!=='plasma') return;          // tap the pill to switch Waves ↔ Trends
+  const r=canvas.getBoundingClientRect(); const x=(e.clientX-r.left)*canvas.width/r.width, y=(e.clientY-r.top)*canvas.height/r.height;
+  if(x>=tgl.x&&x<=tgl.x+tgl.w&&y>=tgl.y&&y<=tgl.y+tgl.h) plasmaView=(plasmaView==='waves'?'trends':'waves'); });
 
 const statusEl=document.getElementById('status'), bpmEl=document.getElementById('bpm'),
       heartGlyph=document.querySelector('#heart .hh'), waitEl=document.getElementById('wait'),
       alphaFill=document.getElementById('alphaFill'), eyesEl=document.getElementById('eyes'),
       captionEl=document.getElementById('caption');
 const CAPTION={ bloom:'Calm (alpha) opens a warm bloom · thinking (beta) tightens it cool',
-  plasma:'Liquid ink · Alpha swells it · Beta quickens the flow',
+  plasma:'Live EEG per band · tap Waves / Trends · high-pass set in Control',
   spectrum:'Your live 3–45 Hz spectrum · color = frequency · green ring = alpha',
   butterfly:'Calm holds the wings still · arousal flaps them & summons an energetic flock',
   drift:'Theta deepens · dreamy butterflies drift in',
